@@ -19,9 +19,10 @@ keywords = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
 dependencies = [
@@ -29,6 +30,11 @@ dependencies = [
     "scipy>=1.11",
     "sympy>=1.12",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ChenXu-Huang/ncpolopt"
+Repository = "https://github.com/ChenXu-Huang/ncpolopt"
+Issues = "https://github.com/ChenXu-Huang/ncpolopt/issues"
 
 [project.optional-dependencies]
 cvxpy = ["cvxpy>=1.5"]
@@ -63,8 +69,6 @@ package = true
 target-version = "py313"
 line-length = 88
 src = ["src", "tests"]
-# The legacy GPL-3 reference package is archived, not maintained.
-extend-exclude = ["src.old"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "RUF"]
