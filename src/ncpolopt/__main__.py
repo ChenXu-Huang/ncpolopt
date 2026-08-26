@@ -3,7 +3,7 @@
 Prints the package version, the platform it runs on, and the SDP solvers
 that are currently usable. The actual problem building happens through the
 Python API; the CLI exists so ``pip install ncpolopt`` provides a useful
-``ncpolopt`` command out of the box.
+``ncpolopt`` command out of the box, and ``python -m ncpolopt`` works too.
 """
 
 from __future__ import annotations
@@ -31,3 +31,7 @@ def main() -> None:
     else:
         print("No SDP solver found. Install one, e.g. `pip install ncpolopt[cvxpy]`.")
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
