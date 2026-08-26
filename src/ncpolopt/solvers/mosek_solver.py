@@ -1,7 +1,7 @@
 """The MOSEK backend.
 
-Ported from ``solve_with_mosek`` (src.old/ncpol2sdpa/mosek_utils.py). The
-old backend was never exercised numerically (MOSEK needs a license) and its
+Ported from the legacy ``solve_with_mosek`` function. The old backend was
+never exercised numerically (MOSEK needs a license) and its
 solution extraction used a hand-rolled splitter (``moseksol_to_xmat``) that
 walked a single fused vector with index skips; the new one reads each bar
 variable separately and rebuilds the dense matrices from MOSEK's packed

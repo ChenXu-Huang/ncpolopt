@@ -1,7 +1,7 @@
 """NPA-hierarchy tests over Bell scenarios.
 
-Ported from Chsh, ChshMixedLevel, ElegantBell, and NietoSilleras
-(src.old/tests/test_ncpol2sdpa.py). The last test exercises polynomial
+Ported from the legacy Chsh, ChshMixedLevel, ElegantBell, and
+NietoSilleras cases. The last test exercises polynomial
 moment equalities (the behaviour constraints) mixed with a MomentEntry
 one -- the string DSL entry ``"+0[0,0]-1.0"`` of the old suite becomes
 ``MomentEntry(0, 0, 0) - 1.0``.

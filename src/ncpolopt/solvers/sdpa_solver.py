@@ -1,7 +1,7 @@
 """The external SDPA binary backend.
 
-Ported from ``solve_with_sdpa`` (src.old/ncpol2sdpa/sdpa_utils.py). The
-.dat-s writing and .out parsing live in :mod:`ncpolopt.sdpa_writer` as pure
+Ported from the legacy ``solve_with_sdpa`` function. The .dat-s writing
+and .out parsing live in :mod:`ncpolopt.sdpa_writer` as pure
 functions, so they are testable without the binary; this module only shells
 out to ``sdpa`` and applies the canonical constant-term conventions.
 

@@ -1,7 +1,7 @@
 """The PICOS backend (CVXOPT under the hood).
 
-Ported from ``convert_to_picos``/``solve_with_cvxopt``
-(src.old/ncpol2sdpa/picos_utils.py). The old converter rebuilt each
+Ported from the legacy ``convert_to_picos``/``solve_with_cvxopt``
+functions. The old converter rebuilt each
 constraint from picos 1.x internal ``factors`` dictionaries and indexed the
 moment vector by SDP variable number, which silently misplaces entries
 whenever the variable order differs from the moment-matrix position order.

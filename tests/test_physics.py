@@ -1,7 +1,7 @@
 """Physics-driven tests: ladder-operator constraint sets and a Hubbard chain.
 
-Ported from HarmonicOscillator and Magnetization
-(src.old/tests/test_ncpol2sdpa.py). Magnetization uses a polynomial moment
+Ported from the legacy HarmonicOscillator and Magnetization cases.
+Magnetization uses a polynomial moment
 equality (the particle-number constraint) and extracts a value from the
 solution through ``monomial_value``.
 """

@@ -1,7 +1,7 @@
 """End-to-end solving tests against small textbook examples.
 
-Ported from ExampleNoncommutative and ExampleCommutative
-(src.old/tests/test_ncpol2sdpa.py). Both relaxations solve to -0.75 and
+Ported from the legacy ExampleNoncommutative and ExampleCommutative
+cases. Both relaxations solve to -0.75 and
 -(1 - sqrt(3)) respectively; the old suite ran them once per solver
 backend, which the ``solver_kind`` fixture does automatically.
 """

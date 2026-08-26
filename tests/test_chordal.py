@@ -1,8 +1,8 @@
 """Chordal sparsity extension tests.
 
-The SparsePop numerical test is ported from the old suite
-(``SparsePop.test_chordal_extension``, src.old/tests/test_ncpol2sdpa.py).
-The old pattern matrix was filled with ``random.random()`` draws; the
+The SparsePop numerical test is ported from the legacy
+``SparsePop.test_chordal_extension`` case. The old pattern matrix was
+filled with ``random.random()`` draws; the
 completion only depends on the nonzero structure, so the old test was
 deterministic in practice, and the fill is now pinned to a constant so
 the determinism is explicit. The optional chompack path is asserted to

@@ -1,9 +1,9 @@
 """Generation of monomial bases and SDP variable-count estimation.
 
-Ported from ``SdpRelaxation.__generate_monomial_sets`` and
-``SdpRelaxation._estimate_n_vars`` (src.old/ncpol2sdpa/sdp_relaxation.py).
-The old methods mutated ``self.monomial_sets`` in place; the new versions are
-pure functions of the inputs.
+Ported from the legacy ``SdpRelaxation.__generate_monomial_sets`` and
+``SdpRelaxation._estimate_n_vars`` methods. The old methods mutated
+``self.monomial_sets`` in place; the new versions are pure functions of
+the inputs.
 """
 
 from __future__ import annotations

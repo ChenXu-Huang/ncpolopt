@@ -1,7 +1,7 @@
 """Physics helpers: ladder operators, measurement projectors, Bell scenarios.
 
-Ported from physics_utils.py (src.old/ncpol2sdpa/physics_utils.py). The
-functions generate the constraint sets of bosonic/fermionic ladder operators
+Ported from the legacy ``physics_utils`` module. The functions generate
+the constraint sets of bosonic/fermionic ladder operators
 and of projective measurements, build Collins-Gisin Bell expressions, and
 drive the full maximum-violation workflow. The old ``maximum_violation``
 built and solved its own relaxation; here it delegates to

@@ -1,6 +1,6 @@
 """Lasserre-hierarchy tests over commuting variables.
 
-Ported from Gloptipoly and MaxCut (src.old/tests/test_ncpol2sdpa.py). MaxCut
+Ported from the legacy Gloptipoly and MaxCut cases. MaxCut
 exercises the equality-elimination path: the ``xi**2 - 1`` constraints are
 solved algebraically instead of becoming SDP blocks.
 """

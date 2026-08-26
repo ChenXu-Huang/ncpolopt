@@ -1,7 +1,7 @@
 """The CVXPY backend.
 
-Ported from ``solve_with_cvxpy`` (src.old/ncpol2sdpa/cvxpy_utils.py). The
-old converter rebuilt a giant ``lil_matrix`` per block and re-derived the
+Ported from the legacy ``solve_with_cvxpy`` function. The old converter
+rebuilt a giant ``lil_matrix`` per block and re-derived the
 row offsets; the new one iterates the per-block COO data directly. Two
 behavioral fixes: the old code popped ``"solver"`` out of the caller's
 parameter dict (mutating it), and it reported the primal value as the dual.

@@ -1,7 +1,7 @@
 """Chordal sparsity extension for sparse SDP relaxations.
 
-Ported from ``chordal_extension`` (src.old/ncpol2sdpa/chordal_extension.py),
-which itself follows the MATLAB SparsePOP implementation. The correlative
+Ported from the legacy ``chordal_extension`` module, which itself follows
+the MATLAB SparsePOP implementation. The correlative
 sparsity pattern of the objective and constraints is completed to a
 chordal graph -- via the Cholesky factorization of the pattern matrix --
 and the maximal cliques of the completion become the variable sets of a

@@ -1,7 +1,7 @@
 """The Moroder hierarchy for bipartite Bell scenarios.
 
-Ported from ``MoroderHierarchy`` (src.old/ncpol2sdpa/moroder_hierarchy.py).
-The old hierarchy kept two flat monomial sets and generated the moment
+Ported from the legacy ``MoroderHierarchy`` class. The old hierarchy kept
+two flat monomial sets and generated the moment
 matrix block over their tensor product; here the two party bases are
 wrapped into one rectangular set ``[[A, B]]``, which the base machinery of
 :class:`~ncpolopt.relaxation.NpaRelaxation` already understands (block size

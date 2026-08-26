@@ -1,7 +1,7 @@
 """Algebraic elimination of equality constraints.
 
-Ported from ``SdpRelaxation.__remove_equalities``
-(src.old/ncpol2sdpa/sdp_relaxation.py:701). The old code warned about
+Ported from the legacy ``SdpRelaxation.__remove_equalities`` method.
+The old code warned about
 linearly dependent equality rows and then crashed inside
 ``np.linalg.solve`` on the resulting non-square system; the new
 implementation solves the reduced system in the least-squares sense, so

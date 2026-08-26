@@ -1,7 +1,7 @@
 """The reduced density matrix (RDM) hierarchy.
 
-Ported from ``RdmHierarchy`` (src.old/ncpol2sdpa/rdm_hierarchy.py). The
-circulant variant generates the moment matrix in a band layout instead of
+Ported from the legacy ``RdmHierarchy`` class. The circulant variant
+generates the moment matrix in a band layout instead of
 the full square: at degree 1 the complete second-moment matrix, at degree 2
 the per-sub-block layout of the old ``__fourth_moments`` (the N x N grid
 of 4th-moment monomials with its N^2 basis sub-blocks).

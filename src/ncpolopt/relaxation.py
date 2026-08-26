@@ -1,7 +1,7 @@
 """SDP relaxation construction: from a symbolic Problem to frozen SDP data.
 
-Ported from ``SdpRelaxation`` (src.old/ncpol2sdpa/sdp_relaxation.py). The
-old class was a god object: it held the symbolic model, built the SDP in one
+Ported from the legacy ``SdpRelaxation`` class. The old class was a god
+object: it held the symbolic model, built the SDP in one
 giant ``lil_matrix``, solved it, and extracted values. Here the model lives
 in :class:`~ncpolopt.problem.Problem`, construction fills a per-block
 :class:`~ncpolopt.sdp_problem.SdpBuilder`, and solving is delegated to the

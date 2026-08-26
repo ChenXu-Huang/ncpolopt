@@ -1,7 +1,7 @@
 """Typed description of the diagonal block structure of an SDP relaxation.
 
-Ported from ``SdpRelaxation._calculate_block_structure``
-(src.old/ncpol2sdpa/sdp_relaxation.py:848). The old implementation tracked
+Ported from the legacy ``SdpRelaxation._calculate_block_structure`` method.
+The old implementation tracked
 the layout in two parallel arrays -- ``block_struct`` (block sizes) and
 ``localizing_monomial_sets`` (an indexed list padded with ``None`` entries,
 with each equality's localizing basis duplicated) -- and constraint

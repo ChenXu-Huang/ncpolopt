@@ -1,7 +1,7 @@
 """The steering hierarchy.
 
-Ported from ``SteeringHierarchy`` (src.old/ncpol2sdpa/steering_hierarchy.py).
-Each moment of the basis expands into a ``matrix_var_dim x matrix_var_dim``
+Ported from the legacy ``SteeringHierarchy`` class. Each moment of the
+basis expands into a ``matrix_var_dim x matrix_var_dim``
 block of SDP variables: entry (row, col) of the moment matrix becomes the
 sub-block at ``(row*d + r, col*d + c)``, so the moment matrix has size
 ``len(monomials) * matrix_var_dim``. The sub-block groups number their
