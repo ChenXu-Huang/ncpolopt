@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: 3.13
+          enable-cache: true
+
+      - name: Verify tag matches package version
+        run: |
+          VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          if [ "$VERSION" != "${GITHUB_REF_NAME#v}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package version ${VERSION}"
+            exit 1
+          fi
+
+      - name: Build
+        run: uv build
+
+      - name: Publish to PyPI
+        run: uv publish --check-url https://pypi.org/simple/
