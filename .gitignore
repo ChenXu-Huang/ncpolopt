@@ -1,0 +1,21 @@
+# python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv/
+.*_cache/
+
+# system
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ide
+.vscode/
+.eclipse/
+
+# repo
+temp/
