@@ -2,7 +2,7 @@
 
 This file is the project instruction set for AI agents and human
 contributors. The architecture is documented in
-[docs/architecture.md](docs/architecture.md); read it before touching
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); read it before touching
 structure or the solver backends.
 
 ## What this project is
