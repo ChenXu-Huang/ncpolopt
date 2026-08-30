@@ -18,12 +18,11 @@ from ncpolopt.solvers.base import (
     SolverSettings,
     UnsupportedSdpError,
 )
+from ncpolopt.solvers.clarabel_solver import canonical_clarabel_data
+from ncpolopt.solvers.cvxpy_solver import convert_to_cvxpy
 from ncpolopt.solvers.registry import available
 
 clarabel = pytest.importorskip("clarabel")
-
-from ncpolopt.solvers.clarabel_solver import canonical_clarabel_data
-from ncpolopt.solvers.cvxpy_solver import convert_to_cvxpy
 
 _TOL = 1e-7
 
