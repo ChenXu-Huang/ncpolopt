@@ -5,7 +5,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -29,8 +29,34 @@ jobs:
             exit 1
           fi
 
-      - name: Build
+      - name: Build package
         run: uv build
 
       - name: Publish to PyPI
         run: uv publish --check-url https://pypi.org/simple/
+
+      - name: Extract changelog for release
+        id: changelog
+        run: |
+          CLEAN_VERSION="${GITHUB_REF_NAME#v}"
+          awk -v ver="$CLEAN_VERSION" '
+            /^## \[/ {
+              if (found) exit
+              if ($0 ~ "^## \\[" ver "\\]") found=1
+            }
+            found
+          ' docs/CHANGELOG.md > release_body.md
+          grep "^\\[$CLEAN_VERSION\\]:" docs/CHANGELOG.md >> release_body.md
+
+          if [ ! -s release_body.md ]; then
+            echo "## Changelog" > release_body.md
+            echo "Release for version ${{ github.ref_name }}. (No matching changelog entry found in CHANGELOG.md)" >> release_body.md
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          body_path: release_body.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
