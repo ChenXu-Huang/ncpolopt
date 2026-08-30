@@ -11,10 +11,18 @@ Importing this package registers the backends whose code is bundled (their
 native solver libraries are imported lazily, at solve time).
 """
 
-from . import (  # noqa: F401  (importing registers backends)
+from . import (  # importing registers backends
+    clarabel_solver,
     cvxpy_solver,
     mosek_solver,
     picos_solver,
     sdpa_solver,
 )
 
+__all__ = [
+    "clarabel_solver",
+    "cvxpy_solver",
+    "mosek_solver",
+    "picos_solver",
+    "sdpa_solver",
+]

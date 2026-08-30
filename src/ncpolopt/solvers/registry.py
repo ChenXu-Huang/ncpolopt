@@ -22,6 +22,9 @@ from .base import (
 )
 
 #: The supported solver kinds in autodetection order (first wins).
+#: CLARABEL is deliberately absent: the direct sparse backend is an
+#: explicit-selection escape hatch for very large SDPs and must not
+#: change what "auto" picks.
 _DETECTION_ORDER: tuple[SolverKind, ...] = (
     SolverKind.CVXPY,
     SolverKind.MOSEK,
@@ -36,6 +39,7 @@ _SOLVER_MODULES: dict[SolverKind, str] = {
     SolverKind.MOSEK: "mosek",
     SolverKind.CVXOPT: "cvxopt",
     SolverKind.SDPA: "ncpolopt.solvers.sdpa_solver",
+    SolverKind.CLARABEL: "clarabel",
 }
 
 _REGISTRY: dict[SolverKind, SolverBackend] = {}
@@ -45,6 +49,7 @@ _INSTALL_HINTS: dict[SolverKind, str] = {
     SolverKind.MOSEK: "uv pip install ncpolopt[mosek]",
     SolverKind.CVXOPT: "uv pip install ncpolopt[cvxopt]",
     SolverKind.SDPA: "point SolverSettings.sdpa_executable at an SDPA binary",
+    SolverKind.CLARABEL: "uv pip install ncpolopt[clarabel]",
 }
 
 

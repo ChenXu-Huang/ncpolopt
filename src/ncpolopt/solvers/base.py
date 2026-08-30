@@ -25,7 +25,9 @@ class SolverKind(Enum):
     """The supported SDP solvers.
 
     ``SDPA`` refers to an external SDPA binary invoked through a .dat-s
-    file; the others are Python packages.
+    file, and ``CLARABEL`` to the direct sparse CLARABEL backend (explicit
+    selection only -- it never enters autodetection); the others are
+    Python packages.
     """
 
     CVXPY = "cvxpy"
@@ -33,6 +35,7 @@ class SolverKind(Enum):
     MOSEK = "mosek"
     CVXOPT = "cvxopt"
     SDPA = "sdpa"
+    CLARABEL = "clarabel"
 
 
 @dataclass(frozen=True, slots=True)

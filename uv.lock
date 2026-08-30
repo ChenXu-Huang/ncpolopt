@@ -416,6 +416,7 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "chompack" },
+    { name = "clarabel" },
     { name = "cvxopt" },
     { name = "cvxpy" },
     { name = "mosek" },
@@ -424,6 +425,9 @@ all = [
 chordal = [
     { name = "chompack" },
     { name = "cvxopt" },
+]
+clarabel = [
+    { name = "clarabel" },
 ]
 cvxopt = [
     { name = "cvxopt" },
@@ -452,6 +456,8 @@ dev = [
 requires-dist = [
     { name = "chompack", marker = "extra == 'all'", specifier = ">=2.3" },
     { name = "chompack", marker = "extra == 'chordal'", specifier = ">=2.3" },
+    { name = "clarabel", marker = "extra == 'all'", specifier = ">=0.9" },
+    { name = "clarabel", marker = "extra == 'clarabel'", specifier = ">=0.9" },
     { name = "cvxopt", marker = "extra == 'all'", specifier = ">=1.3" },
     { name = "cvxopt", marker = "extra == 'chordal'", specifier = ">=1.3" },
     { name = "cvxopt", marker = "extra == 'cvxopt'", specifier = ">=1.3" },
@@ -465,7 +471,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.11" },
     { name = "sympy", specifier = ">=1.12" },
 ]
-provides-extras = ["cvxpy", "mosek", "cvxopt", "chordal", "all"]
+provides-extras = ["cvxpy", "clarabel", "mosek", "cvxopt", "chordal", "all"]
 
 [package.metadata.requires-dev]
 dev = [

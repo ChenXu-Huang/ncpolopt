@@ -32,7 +32,13 @@ from importlib.metadata import PackageNotFoundError, version
 from ._logging import setup_logging
 from .chordal import find_clique_index, find_variable_cliques, sliding_cliques
 from .expressions import flatten
-from .hierarchies import MoroderHierarchy, RdmHierarchy, SteeringHierarchy
+from .hierarchies import (
+    MoroderHierarchy,
+    RdmHierarchy,
+    SteeringHierarchy,
+    class_moment_equalities,
+    trace_moment_pins,
+)
 from .moment import MomentEntry, MomentExpr
 from .monomials import get_all_monomials, get_monomials
 from .physics import (
@@ -74,6 +80,7 @@ __all__ = [
     "SteeringHierarchy",
     "__version__",
     "bosonic_constraints",
+    "class_moment_equalities",
     "correlator",
     "define_objective_with_I",
     "fermionic_constraints",
@@ -94,5 +101,6 @@ __all__ = [
     "read_sdpa_out",
     "setup_logging",
     "sliding_cliques",
+    "trace_moment_pins",
     "write_dat_s",
 ]
