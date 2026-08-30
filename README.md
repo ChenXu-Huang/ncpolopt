@@ -9,14 +9,20 @@ built on dataclasses and lazy solver discovery.
 
 - **NPA hierarchy** for noncommutative operators, plus the
   [Moroder](https://arxiv.org/abs/1305.2630) (PPT), steering, and RDM
-  (reduced density matrix) hierarchies.
+  (reduced density matrix) hierarchies, and operator-insertion (MDI-style)
+  helpers that generate the trace pins and functional-class moment
+  equalities of a moment-insertion relaxation from an explicit matrix
+  realization (`trace_moment_pins`, `class_moment_equalities`).
 - **Lasserre-style hierarchies** for commuting variables, with an optional
   chordal sparsity extension (SparsePOP-style) that splits the relaxation
   into independent moment blocks per clique.
 - **Four solver backends**: [cvxpy](https://www.cvxpy.org/),
   [MOSEK](https://www.mosek.com/), [PICOS/cvxopt](https://picos-api.gitlab.io/),
   and the external [SDPA](https://sdpa.sourceforge.net/) binary — selected
-  by name or auto-detected.
+  by name or auto-detected — plus a direct sparse
+  [CLARABEL](https://clarabel.org/) backend (`solver="clarabel"`,
+  explicit selection only) for SDPs too large for cvxpy's dense
+  canonicalization.
 - **Moment expressions** (`MomentEntry`) instead of a string DSL for
   writing conditions on the moment matrix directly.
 
@@ -29,8 +35,9 @@ install a solver extra to actually solve:
 uv pip install ncpolopt[cvxpy]        # or: pip install ncpolopt[cvxpy]
 ```
 
-Available extras: `cvxpy`, `mosek`, `cvxopt` (PICOS + cvxopt), `chordal`
-(chompack, only needed for the chompack completion method), and `all`.
+Available extras: `cvxpy`, `clarabel` (direct sparse backend), `mosek`,
+`cvxopt` (PICOS + cvxopt), `chordal` (chompack, only needed for the
+chompack completion method), and `all`.
 With no solver installed the package still imports and builds relaxations;
 only solving raises a `SolverError` telling you which extra to install.
 
@@ -84,6 +91,19 @@ uv sync --group dev
 uv run pytest
 uv run ruff check .
 ```
+
+Multi-minute solver certification tests are marked `slow` and skipped in
+CI (`uv run pytest -m "not slow"`); run them locally with
+`uv run pytest -m slow`.
+
+## Examples
+
+[`examples/quantum_memory/`](examples/quantum_memory/README.md) — numerical
+verification of a measurement-device-independent quantum-memory
+certification (depolarizing channel): correlation tables, dual SDPs, and
+moment-matrix relaxations of the NPA-tau form, including a four-output
+Bell-measurement variant solved through the direct sparse CLARABEL
+backend.
 
 ## License
 

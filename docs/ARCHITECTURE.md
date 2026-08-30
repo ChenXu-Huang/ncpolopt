@@ -107,9 +107,10 @@ src/ncpolopt/
 │                          define_objective_with_I, generate_measurements,
 │                          projective/bosonic/fermionic/pauli_constraints, get_neighbors
 │
-├── hierarchies/           steering.py, moroder.py, rdm.py — subclasses of NpaRelaxation
-└── solvers/               base.py, registry.py, cvxpy_solver.py, picos_solver.py,
-                           mosek_solver.py, sdpa_solver.py, _common.py
+├── hierarchies/           steering.py, moroder.py, rdm.py — subclasses of NpaRelaxation;
+│                          insertion.py — operator-insertion (MDI) helpers
+└── solvers/               base.py, registry.py, cvxpy_solver.py, clarabel_solver.py,
+                           picos_solver.py, mosek_solver.py, sdpa_solver.py, _common.py
 ```
 
 ## Hierarchies
@@ -122,6 +123,20 @@ variants of one class:
 | `SteeringHierarchy` | [hierarchies/steering.py](../src/ncpolopt/hierarchies/steering.py) | `matrix_var_dim` sub-blocks for the assemblage; uses `normalized=False`; the (0,0) moment is a free variable whose first variable is SDP variable 1. |
 | `MoroderHierarchy` | [hierarchies/moroder.py](../src/ncpolopt/hierarchies/moroder.py) | Duplicate moment matrix (`extramomentmatrices=["copy"]`) + PPT constraints via the partial-transpose operator on the vec space. |
 | `RdmHierarchy` | [hierarchies/rdm.py](../src/ncpolopt/hierarchies/rdm.py) | Circulant banded moment layout; block order computed explicitly from block indices (old `m_block` order dependence, bug #12). |
+
+The operator-insertion (MDI, Rosset–Buscemi–Liang) family is not a
+layout variant but a problem-generation pattern, so it lives in
+[hierarchies/insertion.py](../src/ncpolopt/hierarchies/insertion.py) as
+two factory helpers: `trace_moment_pins` pins the moments over a basis to
+their trace values in an explicit matrix realization
+(`momentsubstitutions`), and `class_moment_equalities` emits the
+functional-class equalities of the inserted-operator localizing blocks as
+block-0 `momentequalities`. The equalities need the SDP variable
+positions of entry monomials `u† g v`; rather than re-simulating the
+builder's variable-creation order, the helper builds a draft relaxation
+of the problem (the equality blocks are appended after the moment
+blocks, so the draft's block-0 layout is final) and reads the positions
+off `monomial_index` + `column_locations`.
 
 SymPy never reorders noncommutative factors, and `Dagger(A*B)` flips the
 order; tests must state products explicitly rather than assuming
@@ -148,7 +163,10 @@ registry and detection order `CVXPY → MOSEK → CVXOPT → SDPA`. A backend
 must be both registered (`register()`) and its module importable
 (`available()`); the external SDPA backend additionally requires its
 binary on PATH — an explicitly configured `settings.sdpa_executable`
-still works at solve time even when SDPA is not detected.
+still works at solve time even when SDPA is not detected. The direct
+CLARABEL backend is registered but deliberately absent from the
+detection order: it is an explicit-selection escape hatch for very large
+SDPs (`solver="clarabel"`) and must not change what `"auto"` picks.
 
 All solver imports are lazy; `import ncpolopt` never imports cvxpy,
 mosek, picos, or cvxopt. With no solver installed, `available_solvers()`
@@ -157,9 +175,44 @@ returns `[]` and `solve()` raises `SolverError` with an install hint.
 | Backend | Module | Notes |
 |---|---|---|
 | CVXPY | [solvers/cvxpy_solver.py](../src/ncpolopt/solvers/cvxpy_solver.py) | Default; never mutates caller dicts (bug #10). |
+| CLARABEL | [solvers/clarabel_solver.py](../src/ncpolopt/solvers/clarabel_solver.py) | Direct sparse construction for very large SDPs; explicit selection only; real-valued SDPs only. |
 | PICOS/cvxopt | [solvers/picos_solver.py](../src/ncpolopt/solvers/picos_solver.py) | Returns a `PicosModel` so constraints (e.g. PPT in Moroder tests) can be added after construction; fixed duplicate variable name and double row offset (bugs #5, #6). Unreliable on Windows (see Testing). |
 | MOSEK | [solvers/mosek_solver.py](../src/ncpolopt/solvers/mosek_solver.py) | Parameter lookup via `getattr(mosek.iparam, name)` instead of `eval` (bug #7); x_mat/y_mat exchange fixed (bug #8). |
 | SDPA | [solvers/sdpa_solver.py](../src/ncpolopt/solvers/sdpa_solver.py) | Shells out to the binary inside a `TemporaryDirectory` (TOCTOU race, bug #9); parsing in `sdpa_writer.py` as pure functions. |
+
+### Direct solver data construction (very large SDPs)
+
+The CVXPY backend's canonicalization materializes a dense problem matrix
+(`n_vars` x `n_vars`); for SDPs with ~1e4 variables and a 199-word moment
+matrix the intermediate alone is ~1.6 GB and does not fit. The CLARABEL
+backend (`solver="clarabel"`,
+[solvers/clarabel_solver.py](../src/ncpolopt/solvers/clarabel_solver.py))
+builds the native CLARABEL data directly from the frozen COO
+`SdpProblem`, skipping CVXPY entirely. The mapping encodes the canonical
+form from [solvers/_common.py](../src/ncpolopt/solvers/_common.py) once
+more, mirrored for CLARABEL's convention `b - A x in K`:
+
+- Per block: scalar blocks become NonNeg rows (constant term into `b`);
+  empty scalar blocks get a dummy `b = +1.0` row (the package's
+  empty-scalar artifact: `0.0 >= 0` is Python True, which CVXPY turns
+  into `b = +1.0`); PSD blocks become row-major **lower**-triangle svec
+  rows, off-diagonal entries scaled by `sqrt(2)` (the convention CVXPY
+  uses for its PSD triangle cones).
+- Rows are grouped [NonNeg first | PSD triangles in block order], then
+  `cones = [NonnegativeConeT, *PSDTriangleConeT]`. CLARABEL minimizes
+  `1/2 xᵀPx + qᵀx` subject to `b - A x in K`, so `P` is a zero csc,
+  `q = obj` as-is, `A` carries the negated coefficient rows (package
+  data-dict convention: coefficients negated, constants not) and `b`
+  carries the constant offsets. The dual blocks unscale from the svec
+  segments of CLARABEL's `z` (off-diagonal entries times `sqrt(2)`).
+- Solver statuses map through a small table (`"Solved"` /
+  `"AlmostSolved"` -> `"optimal"`, mirroring the CVXPY backend's
+  `optimal_inaccurate` folding).
+
+The resulting data is exactly the canonical data the CVXPY backend would
+have produced dense — pinned bit-identical by
+`tests/test_clarabel_solver.py` — so results agree with the CVXPY path to
+solver tolerance.
 
 ## Ported bug fixes
 
@@ -198,6 +251,11 @@ pytest under `tests/`, numerical tolerance `1e-5`.
   never assert numbers on it — they skip with `pytest.skip` on
   `pic.SolutionFailure`, and the Moroder witness value is pinned via a
   cvxpy/CLARABEL reconstruction.
+- **Multi-minute solver runs carry the `slow` marker** and are excluded
+  from CI (`uv run pytest -m "not slow"`): the quantum-memory L2
+  certification tests (single-output and 4-output variants, the latter
+  8-25 min per solve). Run them locally with
+  `uv run pytest -m slow tests/test_memory_verification.py`.
 - Each ported bug fix carries a targeted regression test (e.g. MaxCut
   exercises the equality-elimination rank check; `test_sdpa_writer.py`
   round-trips .dat-s text without a binary).
@@ -209,5 +267,10 @@ pytest under `tests/`, numerical tolerance `1e-5`.
 ├── README.md                 quickstart and install
 ├── pyproject.toml            uv build; GPL-3.0-only; extras cvxpy/mosek/cvxopt/chordal
 ├── src/ncpolopt/             the package
-└── tests/                    pytest suite
+├── examples/quantum_memory/  MDI quantum-memory verification: common.py (shared
+│                             construction on the insertion helpers), verify_dual_sdp.py /
+│                             verify_relaxation.py (README.md inside), incl. the
+│                             4-output NPA-tau variant solved via solver="clarabel"
+└── tests/                    pytest suite (incl. test_memory_verification.py;
+                             slow-marked certification runs excluded from CI)
 ```
