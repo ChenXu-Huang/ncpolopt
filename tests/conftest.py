@@ -19,8 +19,15 @@ def _licensed_mosek() -> bool:
         import mosek
 
         env = mosek.Env()
-        env.init()
-        env.dispose()
+        if hasattr(env, "checkoutlicense"):
+            # MOSEK 10+: check out the base feature explicitly; the license
+            # is otherwise only checked at optimize() time.
+            env.checkoutlicense(mosek.feature.pts)
+            env.checkinlicense(mosek.feature.pts)
+        else:
+            env.init()
+        if hasattr(env, "dispose"):
+            env.dispose()
         return True
     except Exception:
         return False

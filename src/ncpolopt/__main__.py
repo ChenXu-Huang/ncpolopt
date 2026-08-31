@@ -19,7 +19,7 @@ from .solvers.registry import available_solvers
 
 def main() -> None:
     """Run the CLI: report version, platform and available solvers."""
-    parser = argparse.ArgumentParser(prog="ncpolopt", description=__doc__)
+    parser = argparse.ArgumentParser(prog="ncpolopt", description=__doc__.splitlines()[0])
     parser.add_argument("--version", action="version", version=__version__)
     args = parser.parse_args()  # noqa: F841 - kept for future subcommands
     setup_logging()

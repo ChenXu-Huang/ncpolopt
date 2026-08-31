@@ -769,24 +769,39 @@ def npa_tau_relaxation_value(
         class_relations: Add the functional class relations (default
             True; disable to expose the degenerate form).
         n_outputs: The number of measurement outputs (1 or 4). For four
-            outputs the relaxation is solved through the package's direct
-            sparse CLARABEL backend (``solver="clarabel"``; the dense
-            cvxpy conversion cannot hold the 199-word moment matrix);
-            ``solver`` must then be a CLARABEL-backed kind.
+            outputs the relaxation is solved through a direct sparse
+            backend (the dense cvxpy conversion cannot hold the 199-word
+            moment matrix): the package's CLARABEL backend by default, or
+            the MOSEK backend (``solver="mosek"``, roughly 6-17x faster at
+            ~40% less memory) when a MOSEK license is available. The
+            MOSEK interior point stalls on the unpinned variant, which is
+            ill-posed, so ``solver="mosek"`` requires ``tp_pin=True``.
 
     Returns:
         The optimal value (the certified fidelity lower bound).
 
     Raises:
-        ValueError: If ``n_outputs`` is 4 and ``solver`` is not a
-            CLARABEL-backed kind.
+        ValueError: If ``n_outputs`` is 4 and ``solver`` is not a direct
+            sparse backend, or if ``solver="mosek"`` without ``tp_pin``.
         RuntimeError: If the solver status is not "optimal".
     """
     problem = _npa_tau_problem(p, tp_pin, class_relations, n_outputs)
     if n_outputs > 1:
-        if solver not in ("cvxpy", "CLARABEL", "clarabel"):
-            raise ValueError(f"4-output solves require CLARABEL, got {solver!r}.")
-        solver = "clarabel"
+        # "cvxpy"/"CLARABEL" keep their historical meaning: the direct
+        # sparse CLARABEL backend, not the dense cvxpy conversion.
+        direct = {"cvxpy": "clarabel", "CLARABEL": "clarabel", "clarabel": "clarabel",
+                  "mosek": "mosek", "MOSEK": "mosek"}
+        if solver not in direct:
+            raise ValueError(
+                "4-output solves require a direct sparse backend "
+                f"('clarabel' or 'mosek'), got {solver!r}."
+            )
+        solver = direct[solver]
+        if solver == "mosek" and not tp_pin:
+            raise ValueError(
+                "The MOSEK backend stalls (status 'unknown') on the "
+                "unpinned 4-output relaxation; pass tp_pin=True."
+            )
     solution = problem.solve(level=2, solver=solver)
     if solution.status != "optimal":
         raise RuntimeError(f"NPA-tau relaxation failed with status {solution.status!r}.")

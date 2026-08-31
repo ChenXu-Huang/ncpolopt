@@ -228,6 +228,10 @@ def solve_with_clarabel(problem: SdpProblem, settings: SolverSettings) -> Solver
     status = _STATUS_MAP.get(str(sol.status), str(sol.status))
     x = np.asarray(sol.x, dtype=float)
     x_mat = block_matrices(problem, x)
+    # TODO(ChenXu): validate the dual reconstruction: the reported dual
+    # value has been observed orders of magnitude away from the primal
+    # value on certified-optimal runs, so _dual_blocks (or dual_value
+    # over it) is likely wrong for this backend.
     y_mat = _dual_blocks(problem, np.asarray(sol.z, dtype=float))
     return SolverResult(
         status=status,

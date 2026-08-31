@@ -212,15 +212,26 @@ def solve_with_mosek(problem: SdpProblem, settings: SolverSettings) -> SolverRes
     tstart = time.monotonic()
     task.optimize()
     solution_time = time.monotonic() - tstart
+    # NOTE: the enum names differ across MOSEK versions (MOSEK 11 dropped
+    # the near_* statuses), so map only the names this version defines.
     status = {
-        mosek.solsta.optimal: "optimal",
-        mosek.solsta.near_optimal: "optimal",
-        mosek.solsta.primal_infeasible_cer: "infeasible",
-        mosek.solsta.prim_and_dual_infeasible_cer: "infeasible",
-        mosek.solsta.dual_infeasible_cer: "unbounded",
+        getattr(mosek.solsta, name): mapped
+        for name, mapped in (
+            ("optimal", "optimal"),
+            ("near_optimal", "optimal"),
+            ("prim_infeas_cer", "infeasible"),
+            ("prim_and_dual_infeas_cer", "infeasible"),
+            ("dual_infeas_cer", "unbounded"),
+        )
+        if hasattr(mosek.solsta, name)
     }.get(task.getsolsta(mosek.soltype.itr), "unknown")
-    x = np.asarray(task.gety())
+    # MOSEK 10+ requires the solution selector on gety.
+    x = np.asarray(task.gety(mosek.soltype.itr))
     x_mat = block_matrices(problem, x)
+    # TODO(ChenXu): the y_mat slot holds MOSEK's primal bar matrices
+    # (getbarxj), not the canonical dual matrices, so the dual value
+    # computed over them is meaningless (observed far from the primal
+    # value). Extract the true dual or stop reporting it on this backend.
     y_mat = tuple(
         _lower_triangle_to_dense(
             task.getbarxj(mosek.soltype.itr, block_index), block.size

@@ -61,6 +61,24 @@ def test_sdpa_wrong_executable_raises_solver_error() -> None:
 
 
 @pytest.mark.skipif(not requires("mosek"), reason="mosek is not installed")
+def test_mosek_solves_basic_problem() -> None:
+    """The MOSEK status map matches the installed MOSEK version's enum.
+
+    MOSEK 11 dropped ``solsta.near_optimal`` and never had the
+    ``*_infeasible_cer`` spellings the old map used; the eagerly built
+    status dict raised ``AttributeError`` right after the solve. Requires
+    a licensed MOSEK.
+    """
+    from conftest import _licensed_mosek
+
+    if not _licensed_mosek():
+        pytest.skip("MOSEK cannot acquire a license")
+    solution = _basic_problem().solve(2, solver=SolverKind.MOSEK)
+    assert solution.status == "optimal"
+    assert abs(solution.primal + 0.75) < 10e-5
+
+
+@pytest.mark.skipif(not requires("mosek"), reason="mosek is not installed")
 def test_mosek_conversion() -> None:
     """The task carries one constraint per variable and one barvar per block."""
     import mosek
