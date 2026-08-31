@@ -1,5 +1,13 @@
 # ncpolopt
 
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.13+-blue?style=flat-square" alt="Python 3.13+">
+  <img src="https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square" alt="License: GPL-3.0">
+  <img src="https://github.com/ChenXu-Huang/ncpolopt/actions/workflows/ci.yml/badge.svg?style=flat-square" alt="CI status">
+<img src="https://img.shields.io/pypi/v/ncpolopt?style=flat-square" alt="PyPI version">
+<img src="https://img.shields.io/pypi/dm/ncpolopt?style=flat-square" alt="PyPI downloads">
+</p>
+
 Sparse SDP relaxations of polynomial optimization problems with
 noncommuting variables — the [NPA hierarchy](https://arxiv.org/abs/0803.4291)
 and its relatives. `ncpolopt` is a modern rewrite of the GPL-3
@@ -102,8 +110,8 @@ CI (`uv run pytest -m "not slow"`); run them locally with
 verification of a measurement-device-independent quantum-memory
 certification (depolarizing channel): correlation tables, dual SDPs, and
 moment-matrix relaxations of the NPA-tau form, including a four-output
-Bell-measurement variant solved through the direct sparse CLARABEL
-backend.
+Bell-measurement variant solved through the direct sparse backends
+(CLARABEL by default, or MOSEK with `tp_pin=True`).
 
 ## License
 

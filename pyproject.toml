@@ -1,6 +1,6 @@
 [project]
 name = "ncpolopt"
-version = "0.1.0"
+version = "0.2.0"
 description = "Sparse SDP relaxations of polynomial optimization problems with noncommuting variables (NPA hierarchy)"
 readme = "README.md"
 requires-python = ">=3.13"

@@ -4,7 +4,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] — 2026-08-31
 
 ### Added
 
@@ -27,9 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `tests/test_memory_verification.py` — regression tests pinning the
   quantum-memory example values.
 - 4-output Bell-measurement variant of the quantum-memory NPA-tau
-  relaxation (`n_outputs=4` in `examples/quantum_memory/common.py`),
-  solved through the direct sparse CLARABEL backend (the dense cvxpy
-  conversion cannot hold its 199-word moment matrix).
+  relaxation (`n_outputs=4` in `examples/quantum_memory/common.py`):
+  the dense cvxpy conversion cannot hold its 199-word moment matrix, so
+  it is solved through the direct sparse backends — CLARABEL by default,
+  or MOSEK (`solver="mosek"`, roughly 6-17x faster at ~40% less memory)
+  when a license is available. The MOSEK interior point stalls on the
+  unpinned (ill-posed) variant, so `solver="mosek"` requires
+  `tp_pin=True`.
 - Orthogonal-input substitution rules (`rho_0 rho_1 -> 0`,
   `sigma_0 sigma_1 -> 0`, both orders) in the quantum-memory example, which
   drop the identically-zero words and shrink the SDP (62 S-basis words and
@@ -40,11 +44,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   reduced construction, and both constructions yield valid lower bounds.
 - `slow` pytest marker for multi-minute solver runs; CI runs
   `pytest -m "not slow"`.
+- `__version_tuple__` on the public API exposing the version components.
+- GitHub release workflow creating a Release whose body is the version's
+  changelog section.
 
 ### Changed
 
 - Renamed `docs/architecture.md` → `docs/ARCHITECTURE.md`; updated the
   reference in `AGENTS.md`.
+- The MOSEK backend resolves `solsta` enum names at runtime and passes
+  the interior-point solution selector to `gety`, so MOSEK 10/11 API
+  changes no longer break solves; the test license probe checks out the
+  `pts` feature explicitly (MOSEK 10+ defers the license check to
+  `optimize()`).
+- CLI `--help` description now shows only the first line of the module
+  docstring instead of the raw multiline text.
+
+### Fixed
+
+- `AttributeError` after a successful MOSEK solve on MOSEK 11 (dropped
+  `solsta.near_optimal`) and MOSEK 10 (renamed `*_infeasible_cer`
+  statuses) — regression-tested in `test_mosek_solves_basic_problem`.
 
 ## [0.1.0] — 2026-08-26
 
@@ -70,3 +90,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   conventions.
 
 [0.1.0]: https://github.com/ChenXu-Huang/ncpolopt/releases/tag/v0.1.0
+[0.2.0]: https://github.com/ChenXu-Huang/ncpolopt/compare/v0.1.0...v0.2.0
