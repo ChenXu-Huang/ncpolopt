@@ -27,15 +27,10 @@ excluded from CI (``uv run pytest -m "not slow"``); run them locally with
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
-
-if TYPE_CHECKING:
-    import cvxpy as cp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples" / "quantum_memory"))
 
@@ -252,157 +247,33 @@ def test_dual_sdps_equal_fidelity() -> None:
 # --- The eq. (14) relaxation, verbatim at level 1 ---------------------------
 
 
-def _u_operators() -> list[np.ndarray]:
-    """Return ``U_{x,y} = rho_x^T x I^{A2} x sigma_y`` as 8x8 matrices."""
-    return [
-        np.kron(np.kron(input_projectors()[x].T, np.eye(DIM)), input_projectors()[y])
-        for x in range(4)
-        for y in range(4)
-    ]
-
-
-def _v_operators(n_outputs: int) -> list[np.ndarray]:
-    """Return ``V_alpha = I^{A0} x Phi^alpha`` as 8x8 matrices."""
-    return [np.kron(np.eye(DIM), bell_projectors()[alpha]) for alpha in range(n_outputs)]
-
-
-def _build_words(us: list[np.ndarray], vs: list[np.ndarray]) -> list[np.ndarray]:
-    """Return the level-1 word set {I} U {U} U {V} as 8x8 matrices."""
-    return [np.eye(8, dtype=complex), *us, *vs]
-
-
-def _partial_trace_b2(x: np.ndarray) -> np.ndarray:
-    """Trace out H_{B2} from an 8x8 matrix (diagonal pairs only)."""
-    x4 = x.reshape(DIM, DIM, DIM, DIM, DIM, DIM)
-    return np.einsum("abcdec->abde", x4).reshape(4, 4)
-
-
-def _partial_trace_a0b2(x: np.ndarray) -> np.ndarray:
-    """Trace out H_{A0} x H_{B2} from an 8x8 matrix (diagonal pairs only)."""
-    x4 = x.reshape(DIM, DIM, DIM, DIM, DIM, DIM)
-    return np.einsum("abcadc->bd", x4).reshape(2, 2)
-
-
-FunctionalKey = tuple[tuple[float, ...], tuple[float, ...]]
-
-
-def _functional_keys(
-    words: list[np.ndarray], trace_fn: Callable[[np.ndarray], np.ndarray]
-) -> list[list[FunctionalKey]]:
-    """Classify every (u, v) pair by its functional of the inserted operator.
-
-    ``M[u, v] = Tr[u^dagger (J_M x I) v]`` depends on ``G_{u,v} =
-    Tr_{B2}(v u^dagger)`` only; two pairs with the same G share a moment.
-
-    Args:
-        words: The word list.
-        trace_fn: The partial trace to apply (B2 or A0B2).
-
-    Returns:
-        A matrix of rounded real/imag keys, one per (u, v) pair.
-    """
-    n = len(words)
-    keys: list[list[FunctionalKey]] = []
-    for i in range(n):
-        row: list[FunctionalKey] = []
-        for j in range(n):
-            g = trace_fn(words[j] @ words[i].T.conj())
-            row.append(
-                (tuple(np.round(np.real(g), 9).ravel()), tuple(np.round(np.imag(g), 9).ravel()))
-            )
-        keys.append(row)
-    return keys
-
-
-def _conjugate_key(key: FunctionalKey) -> FunctionalKey:
-    """Return the key of the adjoint functional G^dagger of ``key``."""
-    real, imag = key
-    side = round(np.sqrt(len(real)))
-    r = np.array(real).reshape(side, side)
-    im = np.array(imag).reshape(side, side)
-    return (tuple(r.T.ravel()), tuple((-im).T.ravel()))
-
-
-def _class_expression(keys: list[list[FunctionalKey]]) -> cp.Expression:
-    """Build a cvxpy matrix with one variable per functional class.
-
-    Args:
-        keys: The functional class keys of every (u, v) pair.
-
-    Returns:
-        The cvxpy matrix expression (Hermitian by construction).
-    """
-    import cvxpy as cp
-
-    classes: dict[FunctionalKey, int] = {}
-    variables: dict[int, object] = {}
-
-    def var_for(key: FunctionalKey) -> object:
-        if key in classes:
-            return variables[classes[key]]
-        adjoint = _conjugate_key(key)
-        if adjoint in classes:
-            return cp.conj(variables[classes[adjoint]])
-        real, imag = key
-        side = round(np.sqrt(len(real)))
-        r = np.array(real).reshape(side, side)
-        im = np.array(imag).reshape(side, side)
-        self_adjoint = np.max(np.abs(im)) == 0.0 and np.allclose(r, r.T, atol=1e-8)
-        index = len(classes)
-        classes[key] = index
-        variable = cp.Variable() if self_adjoint else cp.Variable(complex=True)
-        variables[index] = variable
-        return variable
-
-    n = len(keys)
-    return cp.bmat([[var_for(keys[i][j]) for j in range(n)] for i in range(n)])
-
-
-def _verbatim_l1_value(p: float, n_outputs: int = 1, tp_pin: bool = False) -> float:
+def _verbatim_l1_value(p: float, n_outputs: int = 1) -> float:
     """Solve the eq. (14) relaxation verbatim at level 1.
+
+    Delegates to the shared construction in ``common.py`` (the functional
+    class parametrization, the correlation pins and the completeness
+    relations); the regression under test is that the certified value
+    stays a non-degenerate lower bound.
 
     Args:
         p: The channel parameter.
         n_outputs: Number of measurement outputs (1 or 4).
-        tp_pin: Pin ``M[I, I] = d`` (trace-preserving Choi normalization).
 
     Returns:
         The optimal value (the certified fidelity lower bound).
     """
-    import cvxpy as cp
-
-    words = _build_words(_u_operators(), _v_operators(n_outputs))
-    m = _class_expression(_functional_keys(words, _partial_trace_b2))
-    l_block = _class_expression(_functional_keys(words, _partial_trace_a0b2))
-    constraints: list[object] = [m >> 0, l_block >> 0, l_block - m >> 0]
-    for alpha in range(n_outputs):
-        for x in range(4):
-            for y in range(4):
-                i_u = 1 + 4 * x + y
-                i_v = 1 + 16 + alpha
-                constraints.append(m[i_v, i_u] == correlations_via_choi(p, x, y, alpha) / DIM)
-    if tp_pin:
-        constraints.append(m[0, 0] == DIM)
-    problem = cp.Problem(cp.Minimize(cp.real(l_block[0, 0]) / DIM**3), constraints)
-    problem.solve(solver="CLARABEL")
-    if problem.status not in ("optimal", "optimal_inaccurate"):
-        pytest.skip(f"cvxpy status {problem.status} on the verbatim L1 relaxation")
-    return float(problem.value)
+    return common.verbatim_relaxation_value(p, n_outputs=n_outputs, level=1)
 
 
 def test_relaxation_lower_bound() -> None:
     """The level-1 relaxation is a valid non-degenerate lower bound on p."""
     pytest.importorskip("cvxpy")
     # Measured values (CLARABEL, p = 0.5); update with care if the solvers
-    # change. All lie in the certified window [p/(8 d), p] = [0.03125, 0.5].
-    expected = {
-        (1, False): 0.08939623,
-        (1, True): 0.29204206,
-        (4, False): 0.12500001,
-        (4, True): 0.31250000,
-    }
-    for (n_outputs, tp_pin), pinned in expected.items():
-        value = _verbatim_l1_value(0.5, n_outputs=n_outputs, tp_pin=tp_pin)
+    # change. With the completeness relations both output counts sit on
+    # the analytic line (2p+1)/6 = 1/3 at p = 0.5.
+    expected = {1: 0.33333333, 4: 0.33333333}
+    for n_outputs, pinned in expected.items():
+        value = _verbatim_l1_value(0.5, n_outputs=n_outputs)
         assert value == pytest.approx(pinned, abs=1e-3)
         assert value <= 0.5 + 1e-5
         assert value > 1e-6
@@ -413,27 +284,25 @@ def test_relaxation_lower_bound() -> None:
 
 @pytest.mark.slow
 def test_npa_tau_factored_certified() -> None:
-    """The factored NPA-tau L2 relaxation certifies non-degenerate bounds.
+    """The factored NPA-tau L2 relaxation certifies a non-degenerate bound.
 
-    Two solves of the shared factored construction at the README table's
-    anchor point p = 0.5, with and without the trace-preserving pin
-    ``<J> = 1/4``. The pinned values are the measured ones
-    (cvxpy/CLARABEL); update with care if the construction changes. The
-    orthogonal-input rules drop the ``rho_0 rho_1``-type words, which also
-    drops active class-relation links, so the certified values sit slightly
-    below the un-reduced construction's (0.301898 / 0.331193); both are
-    valid lower bounds. Both must improve on the verbatim level-1 values
-    (0.0894 / 0.2920) and lie in the certified window (0, p]. The two
-    solves take minutes each, so the test is marked ``slow`` and excluded
-    from CI.
+    One solve of the shared factored construction at the README table's
+    anchor point p = 0.5 (direct sparse CLARABEL backend -- the dense
+    cvxpy canonicalization of the 176-word moment matrix does not fit in
+    memory). With the completeness moment-equalities (``rho_0 + rho_1 =
+    I`` etc. lifted into the inserted blocks) no trace-preserving pin is
+    needed: the certified value sits on the analytic line ``(2p+1)/6``
+    (= 1/3 at p = 0.5). The value is the measured one; update with care
+    if the construction changes. It must improve on the pre-completeness
+    verbatim level-1 value (0.0894) and lie in the certified window
+    (0, p]. The solve takes minutes, so the test is marked ``slow`` and
+    excluded from CI.
     """
-    pytest.importorskip("cvxpy")
-    expected = {False: 0.293118, True: 0.331071}
-    for tp_pin, pinned in expected.items():
-        value = common.npa_tau_relaxation_value(0.5, tp_pin=tp_pin, solver="cvxpy")
-        assert value == pytest.approx(pinned, abs=1e-3)
-        assert value <= 0.5 + 1e-5
-        assert value > 1e-6
+    pytest.importorskip("clarabel")
+    value = common.npa_tau_relaxation_value(0.5, solver="clarabel")
+    assert value == pytest.approx(0.333333, abs=1e-3)
+    assert value <= 0.5 + 1e-5
+    assert value > 1e-6
 
 
 # --- The 4-output factored variant: construction sizes and solves -----------
@@ -445,21 +314,25 @@ def test_factored_npa_tau_construction() -> None:
     The orthogonal-input rules (|0> and |1> are orthogonal, so
     ``rho_0 rho_1 -> 0`` and ``sigma_0 sigma_1 -> 0`` in both orders)
     shrink the SDP: the single-output construction keeps 62 S-basis words
-    and 2839 class relations (without the rules it was 66 and 3047). Pin
-    the measured sizes so a change in the reduction rules trips the test;
-    the 4-output variant carries the full Bell measurement (14 operators,
-    113 S-basis words). The relation count is independent of ``tp_pin``.
+    and 6339 relations (without the rules it was 66 and 3047). The
+    relation count includes the functional-class equalities (with the
+    constant-equalities tying free class members to pinned classes), the
+    completeness moment-equalities lifting ``rho_0 + rho_1 = I`` (likewise
+    sigma; ``sum_alpha v_alpha = I`` for four outputs) into the inserted
+    blocks, and the Pauli anticommutator moment-equalities
+    (``{rho_x, rho_z} = sum_t a_t rho_t``; 72 extramonomials, 176-word
+    moment matrix). Pin the measured sizes so a change in the reduction
+    rules trips the test; the 4-output variant carries the full Bell
+    measurement (14 operators, 113 S-basis words).
     """
     expected = {
-        (1, False): (11, 62, 26, 32, 136, 2839, 5967),
-        (1, True): (11, 62, 26, 32, 136, 2839, 5966),
-        (4, False): (14, 113, 29, 32, 199, 5551, 11265),
-        (4, True): (14, 113, 29, 32, 199, 5551, 11264),
+        1: (11, 62, 26, 72, 176, 6339, 10727),
+        4: (14, 113, 29, 72, 239, 13585, 18425),
     }
-    for (n_outputs, tp_pin), sizes in expected.items():
+    for n_outputs, sizes in expected.items():
         data = common._factored_data(n_outputs)
-        relations, extras, localizing = common._factored_classes(tp_pin, n_outputs)
-        sdp = common._npa_tau_problem(0.5, tp_pin, n_outputs=n_outputs).relaxation(level=2).sdp
+        relations, extras, localizing = common._factored_classes(n_outputs)
+        sdp = common._npa_tau_problem(0.5, n_outputs=n_outputs).relaxation(level=2).sdp
         operators, s_basis, loc, ex, extended, rel, n_vars = sizes
         assert len(data["operators"]) == operators
         assert len(data["s_basis"]) == s_basis
@@ -470,18 +343,15 @@ def test_factored_npa_tau_construction() -> None:
         assert sdp.n_vars == n_vars
 
 
-def _npa_tau_4out_value(tp_pin: bool) -> float:
+def _npa_tau_4out_value() -> float:
     """Solve the 4-output L2 relaxation in a fresh subprocess.
 
     The direct sparse CLARABEL backend peaks near 3.5 GB on this problem;
     a long-lived pytest process that already imported cvxpy sits close
     enough to the commit limit that the solve is occasionally killed by
-    the OS with no traceback. A fresh process per solve keeps the peak
-    low and the test repeatable (the measured values below were produced
-    exactly this way).
-
-    Args:
-        tp_pin: Pin ``<J> = 1/4`` (trace-preserving Choi normalization).
+    the OS with no traceback. A fresh process keeps the peak low and the
+    test repeatable (the measured value below was produced exactly this
+    way).
 
     Returns:
         The certified L2 value at p = 0.5.
@@ -494,7 +364,7 @@ def _npa_tau_4out_value(tp_pin: bool) -> float:
         "warnings.filterwarnings('ignore')\n"
         f"sys.path.insert(0, {example_dir!r})\n"
         "from common import npa_tau_relaxation_value\n"
-        f"print(npa_tau_relaxation_value(0.5, tp_pin={tp_pin!r}, solver='cvxpy', n_outputs=4))"
+        "print(npa_tau_relaxation_value(0.5, solver='cvxpy', n_outputs=4))"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=3600)
     assert result.returncode == 0, f"4-output solve subprocess failed:\n{result.stderr[-2000:]}"
@@ -503,19 +373,20 @@ def _npa_tau_4out_value(tp_pin: bool) -> float:
 
 @pytest.mark.slow
 def test_npa_tau_factored_certified_4out() -> None:
-    """The 4-output factored NPA-tau L2 relaxation certifies tighter bounds.
+    """The 4-output factored NPA-tau L2 relaxation certifies the same bound.
 
     The full four-output Bell measurement adds three measurement outputs
-    (14 operators instead of 11): at p = 0.5 the L2 values (CLARABEL,
-    direct sparse CLARABEL backend, one fresh subprocess per solve) beat the
-    single-output ones (0.293118 / 0.331071). Each solve takes 8-25
-    minutes, so the test is marked ``slow`` and excluded from CI; run
-    locally with ``uv run pytest -m slow tests/test_memory_verification.py``.
+    (14 operators instead of 11): at p = 0.5 the L2 value (direct sparse
+    backend, one fresh subprocess) coincides with the single-output one on
+    the ``(2p+1)/6`` line (= 1/3) -- with the completeness
+    moment-equalities in place, neither the extra outputs nor a
+    trace-preserving pin add anything. The solve takes 8-25 minutes
+    (CLARABEL) or a few minutes (MOSEK), so the test is marked ``slow``
+    and excluded from CI; run locally with
+    ``uv run pytest -m slow tests/test_memory_verification.py``.
     """
     pytest.importorskip("cvxpy")
-    expected = {False: 0.331141, True: 0.333319}
-    for tp_pin, pinned in expected.items():
-        value = _npa_tau_4out_value(tp_pin)
-        assert value == pytest.approx(pinned, abs=1e-3)
-        assert value <= 0.5 + 1e-5
-        assert value > 1e-6
+    value = _npa_tau_4out_value()
+    assert value == pytest.approx(0.333333, abs=1e-3)
+    assert value <= 0.5 + 1e-5
+    assert value > 1e-6

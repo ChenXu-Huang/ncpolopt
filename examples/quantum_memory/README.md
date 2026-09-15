@@ -50,37 +50,46 @@ The last column confirms the document's `Z >= 0` constraint is redundant:
 
 ## Part B: the eq. (14) relaxation (certified)
 
-The relaxation is built twice: verbatim over the word set `S = {I} U {U} U {V}`
-(one SDP variable per functional class of `G_{u,v} = Tr_{B2}(v u^dagger)` for
-the M block and of `H_{u,v} = Tr_{A0B2}(v u^dagger)` for the L block, pins
-`M[V_alpha, U_{x,y}] = p(alpha|x,y)/d`, constraints `M >= 0, L >= 0,
-L - M >= 0`, objective `L[I, I]/d^3`), and as a standard NPA problem over the
-extended algebra `S union {J, W}` with state `tau = I_8/8` through the public
-ncpolopt API (see below).
+The relaxation is built twice: verbatim over the word set `S = {I} U {U} U
+{V} U {X} U {W}` (one SDP variable per functional class of `G_{u,v} =
+Tr_{B2}(v u^dagger)` for the M block and of `H_{u,v} = Tr_{A0B2}(v
+u^dagger)` for the L block, pins `M[V_alpha, U_{x,y}] = p(alpha|x,y)/d`,
+constraints `M >= 0, L >= 0, L - M >= 0`, objective `L[I, I]/d^3`), and as
+a standard NPA problem over the extended algebra `S union {J, W}` with
+state `tau = I_8/8` through the public ncpolopt API (see below). The
+`X_x = rho_x^T x I x I` and `W_y = I x I x sigma_y` words are the A0-/B2-
+side factors of the U operators; including them makes the **completeness
+relations** writable as entrywise linear constraints on both blocks:
+`M[u, X_0] + M[u, X_1] = M[u, I]`, `M[u, U_{0,y}] + M[u, U_{1,y}] = M[u,
+W_y]` (likewise with X/W swapped), and `sum_alpha M[u, V_alpha] = M[u, I]`
+for the four-output measurement. No trace-preserving pin is used: with the
+completeness relations in place the pin is redundant.
 
 Level-1 values (verbatim form, CLARABEL; all certified lower bounds,
-`value <= p + 1e-5` and strictly positive):
+`value <= p + 1e-5` and strictly positive). With the completeness
+relations the bound already sits on the analytic line `(2p+1)/6` at level
+1, for one and four outputs alike:
 
-| p | single-output | + TP pin | 4-output | + TP pin | degenerate floor `p/(8d)` |
-| --- | --- | --- | --- | --- | --- |
-| 0.25 | 0.015625 | **0.250000** | 0.015625 | **0.250000** | 0.015625 |
-| 0.30 | 0.029196 | 0.258408 | 0.035000 | 0.262500 | 0.018750 |
-| 0.50 | 0.089396 | 0.292042 | 0.125000 | 0.312500 | 0.031250 |
-| 0.75 | 0.179185 | 0.334084 | 0.265625 | 0.375000 | 0.046875 |
-| 1.00 | 0.286725 | 0.376126 | 0.437500 | 0.437500 | 0.062500 |
+| p | single-output L1 | 4-output L1 | `(2p+1)/6` |
+| --- | --- | --- | --- |
+| 0.25 | **0.250000** | **0.250000** | 0.250000 |
+| 0.30 | 0.266667 | 0.266667 | 0.266667 |
+| 0.50 | 0.333333 | 0.333333 | 0.333333 |
+| 0.75 | 0.416667 | 0.416667 | 0.416667 |
+| 1.00 | 0.500000 | 0.500000 | 0.500000 |
 
 Observations:
 
-* **The relaxation is a valid but loose lower bound.** Without the
-  trace-preserving pin the bound collapses toward the degenerate floor
-  `p/(8d)` (at p = 0.25 both variants hit it exactly); the pin
-  `M[I, I] = d` (i.e. `Tr(J_M) = 1`) restores a meaningful certificate, and
-  at the fully depolarizing point p = 0.25 the pinned relaxation is **exact**
-  (0.25 = p).
-* **Four outputs beat one output.** The 4-output Bell measurement gives a
-  strictly larger certified bound in every row (e.g. 0.125000 vs 0.089396 at
-  p = 0.5). The single-output row p = 1.0 (0.286725) shows how much the
-  measurement restriction costs.
+* **The completeness relations transformed the level-1 bound.** Without
+  them (and without any pin) the verbatim L1 bound collapsed toward the
+  degenerate floor `p/(8d)` (0.089396 at p = 0.5); with them it equals
+  the factored level-2 bound everywhere measured. The missing
+  `X_0 + X_1 = I`-type relations were exactly the dilution direction the
+  unaugmented relaxation exploited.
+* **The bound is exact at the fully depolarizing point** (0.250000 = p at
+  p = 0.25) and equals the diagonal correlation `p(0|x,x)` of eq. (16)
+  everywhere else: the strongest statement this data set certifies at
+  these levels.
 * Without the functional-class structure -- treating every moment as an
   independent variable -- the objective degenerates: the pins admit
   `M[I, I] -> 0` with `M[V, V] -> infinity`, so the projection relations
@@ -99,34 +108,69 @@ re-expressed as `U_{x,y} = rho_x (x) I (x) sigma_y` on
 `rho_i sigma_j -> sigma_j rho_i` and the orthogonal-input rules
 (`rho_0 rho_1 -> 0`, `sigma_0 sigma_1 -> 0`, both orders -- the input states
 |0> and |1> are orthogonal, so those words are identically zero and drop out
-of the basis): the level-2 moment matrix collapses to 136 words, and the
-problem solves in minutes (5967 SDP variables, 2839 equality constraints;
-~10 s construction -- the relation set is p-independent and cached per
-`tp_pin` -- plus 100-290 s per solve on cvxpy/CLARABEL). Dropping the zero
-rows also drops active class-relation links, so the certified values below
-sit slightly below the un-reduced construction's (0.301898 / 0.331193 at
-p = 0.5); both are valid lower bounds on `p`.
+of the basis): the level-2 moment matrix collapses to 136 words (176 with
+the Pauli extramonomials below), and the
+problem solves in minutes (10727 SDP variables, 6339 equality constraints;
+~10-20 s construction -- the relation set is p-independent and cached per
+output count -- plus a few minutes per solve on the direct sparse CLARABEL
+backend; the dense cvxpy canonicalization no longer fits in memory).
+Class relations
+that reference pinned or zero classes are not dropped:
+`class_moment_equalities` emits them as constant-equalities on the free
+class members, so the orthogonal-input reduction no longer loses
+class-relation links. Two linear word-relation families are lifted into
+the inserted blocks as moment-equalities (`_linear_span_equalities` in
+[common.py](common.py); plain polynomial `equalities` cannot do this --
+they only constrain block-0 S-moments, which are trace-pinned already):
+
+* The **completeness relations** of the generators:
+  `rho_0 + rho_1 = I`, `sigma_0 + sigma_1 = I`, and (for four outputs)
+  `sum_alpha v_alpha = I` give `<u g rho_0 w> + <u g rho_1 w> = <u g w>`
+  etc. for every word pair `(u, w)` whose terms exist in the moment matrix.
+* The **Pauli-decomposition anticommutator relations**: the four input
+  projectors form a complex basis of the 2x2 matrices, so every degree-2
+  word is a linear combination of degree-1 words. The coefficients are
+  genuinely complex, so the real relaxation gets the symmetric parts
+  `{rho_x, rho_z} = sum_t a_t rho_t` (real `a_t`): 10 anticommutators per
+  side, with the degree-3 words `g.(rho_x rho_z)` / `g.(sigma_y sigma_z)`
+  added as extramonomials (72 in total).
 
 Certified values (CLARABEL; all lower bounds, `value <= p + 1e-5`, strictly
-positive):
+positive) -- identical to the verbatim level-1 values above, on the
+analytic line `(2p+1)/6`:
 
-| p | L2 | L2 + TP pin | L1 single-output (reference) |
-| --- | --- | --- | --- |
-| 0.25 | 0.210473 | **0.250000** | 0.015625 |
-| 0.30 | 0.225669 | 0.265717 | 0.029196 |
-| 0.50 | 0.293118 | 0.331071 | 0.089396 |
-| 0.75 | 0.384767 | 0.413909 | 0.179185 |
-| 1.00 | 0.499687 | 0.499644 | 0.286725 |
+| p | factored L2 | `(2p+1)/6` |
+| --- | --- | --- |
+| 0.25 | **0.250000** | 0.250000 |
+| 0.30 | 0.266667 | 0.266667 |
+| 0.50 | 0.333333 | 0.333333 |
+| 0.75 | 0.416667 | 0.416667 |
+| 1.00 | 0.500000 | 0.500000 |
 
 Observations:
 
-* **The L2 bound dominates the single-output L1 bound at every p** (e.g.
-  0.293118 vs 0.089396 at p = 0.5) -- the localizing structure of eq. (14)
-  carries exactly the additional information the document derives, and at
-  p = 0.25 with the TP pin the bound is exact (0.250000 = p).
+* **The L2 factored bound equals the verbatim L1 bound everywhere
+  measured** (both on the `(2p+1)/6` line): once the completeness
+  relations are imposed, level 2 adds nothing further over level 1. The
+  factored construction remains the demonstration of the public ncpolopt
+  API (and the only route that scales to the four-output measurement).
+* **The `(2p+1)/6` wall is robust**: neither a trace-preserving pin
+  (measured before its removal) nor the generator completeness relations
+  nor the **Pauli-decomposition word relations** go past it (the wall
+  equals the diagonal correlation `p(0|x,x)` of eq. (16)). The Pauli
+  relations were tested in their strongest form: the verbatim path at
+  level 2 with the full complex identities `X_x X_z = sum_t c_t X_t`
+  imposed entrywise (restricted word set of 46 words -- the full level-2
+  closure's 270 words do not fit a dense cvxpy canonicalization), and the
+  factored path with the anticommutator identities `{rho_x, rho_z} = sum_t
+  a_t rho_t` as moment-equalities (72 extramonomials, 176-word moment
+  matrix, 6339 relations, 10727 SDP variables). Both give exactly
+  `(2p+1)/6` (0.333333 at p = 0.5, 0.500000 at p = 1.0). The remaining
+  gap `(4p-1)/6` to the exact value `p` is a genuine finite-level effect
+  of this relaxation family.
 * `removeequalities=True` cannot be used on the class relations: they are
   linearly dependent (conjugate classes share variables in real problems),
-  which CLARABEL rejects. The 2839 equalities are passed through as-is.
+  which CLARABEL rejects. The 6339 equalities are passed through as-is.
 
 ### The NPA-tau re-expression
 
@@ -144,9 +188,11 @@ hard-won:
 
 * The localizing matrices run over the **26-word basis**
   `{1, rho, sigma, v} U {U_{x,y}}`. The degree-2 `U` words are admissible
-  because their `g U` products (the 32 extramonomials `{J, W} . U_{x,y}`,
-  degree 3) are added as `extramonomials`, so every localizing entry monomial
-  `u^dagger g w` (degree <= 5) exists as a moment-matrix entry.
+  because their `g U` products (32 extramonomials `{J, W} . U_{x,y}`,
+  degree 3, plus 40 more `{J, W} . {rho_x rho_z, sigma_y sigma_z}` for the
+  Pauli relations) are added as `extramonomials`, so every localizing
+  entry monomial `u^dagger g w` (degree <= 5) exists as a moment-matrix
+  entry.
 * The `J`- and `W`-localizing blocks are tied to the moment matrix by
   **block-0 moment-equalities** encoding the functional classes of eqs.
   (12)/(13) (`G_{u,v} = Tr_{B2}(v u^dagger)` for `J`, `H_{u,v} = Tr_{A0B2}
@@ -155,47 +201,73 @@ hard-won:
   monomial is created at the first upper-triangle occurrence of the monomial
   or of its canonicalized adjoint (the builder reuses the conjugate's
   variable); the helper reads those positions off a draft build of the
-  relaxation rather than re-simulating the builder, and pinned (constant)
-  classes are dropped entirely.
+  relaxation rather than re-simulating the builder. Pinned (constant)
+  classes are **not** dropped: the helper emits a constant-equality tying
+  each free class member to the pinned value (dropping them instead
+  weakens the relaxation -- the more moments are pinned, the more links
+  would be lost).
 * These relations are **necessary**: without them the localizing entries
   become independent variables and the objective degenerates.
-* The orthogonal-input rules shrink the SDP (62 instead of 66 S-basis words,
-  2839 instead of 3047 relations) -- but they are **not free**: the dropped
-  words also drop active class-relation links, so the certified values shift
-  (e.g. 0.301898 -> 0.293118 at p = 0.5 without the TP pin). Both
-  constructions are valid lower bounds; the values in this document are
-  measured under the reduced one.
+* The **completeness relations** of the generators are added as linear
+  moment-equalities on the inserted blocks (`_completeness_equalities`):
+  `rho_0 + rho_1 = I`, `sigma_0 + sigma_1 = I`, and (four outputs)
+  `sum_alpha v_alpha = I` become `<u g rho_0 w> + <u g rho_1 w> =
+  <u g w>` etc. for every word pair whose terms exist in block 0
+  (positions read off the same draft build; pinned terms fold into the
+  constant). This family is what lifts the unaugmented bound onto the
+  `(2p+1)/6` line, and it cures the ill-posedness that stalled the MOSEK
+  interior point on the 4-output variant (now `optimal`,
+  0.333333 at p = 0.5).
+* The orthogonal-input rules shrink the SDP (62 instead of 66 S-basis
+  words); the class relations into the dropped zero classes survive as
+  constant-equalities `var = 0`, so the reduction no longer weakens the
+  relaxation.
 
 ### The four-output Bell measurement
 
 `n_outputs=4` carries the full Bell measurement `{Phi^0, ..., Phi^3}`: the
 algebra gains three measurement operators `v_1, v_2, v_3` (14 generators,
-113 S-basis words, 199-word level-2 moment matrix, 5551 class relations,
-11265 SDP variables) and the correlations pin all 64 entries
-`<rho_x sigma_y J v_alpha> = p(alpha|x,y)/(8d)`. The 199-word moment matrix
+113 S-basis words, 239-word level-2 moment matrix, 13585 class,
+completeness and Pauli relations, 18425 SDP variables)
+and the correlations pin all 64 entries
+`<rho_x sigma_y J v_alpha> = p(alpha|x,y)/(8d)`. The 239-word moment matrix
 cannot be materialized through the package's dense cvxpy canonicalization
 (~1.6 GB), so `npa_tau_relaxation_value` routes the four-output solves
 through the package's direct sparse CLARABEL backend (`solver="clarabel"`,
 [clarabel_solver.py](../../src/ncpolopt/solvers/clarabel_solver.py): per
 block, the upper-triangle COO mirrored to the lower, off-diagonal svec
 entries scaled by sqrt(2), rows grouped NonNeg first, PSD triangle cones
-after) -- the same SDP, without the dense intermediate. Each solve takes
-8-25 minutes.
+after) -- the same SDP, without the dense intermediate. Each CLARABEL
+solve takes 8-25 minutes; MOSEK solves the same problem in 1-4 minutes
+per point (before the completeness relations were added, MOSEK stalled
+with `unknown` on this variant; it now solves, except at p = 1
+where the boundary-degenerate interior point still returns `unknown` and
+CLARABEL is required, and at p = 0.25 where it overshoots by ~1e-4).
 
-Certified four-output L2 values (CLARABEL, direct sparse construction; all
-lower bounds, `value <= p + 1e-5`, strictly positive):
+Certified four-output L2 values (direct sparse construction; MOSEK, except
+p = 0.25 and p = 1.0 via CLARABEL). All lower bounds within solver
+tolerance, `value <= p + 1e-5` up to the marked MOSEK inaccuracies,
+strictly positive; they coincide with the single-output values on the
+`(2p+1)/6` line:
 
-| p | L2 (4-output) | L2 + TP pin (4-output) | single-output L2 (reference) |
-| --- | --- | --- | --- |
-| 0.25 | 0.248300 | **0.250000** | 0.210473 |
-| 0.30 | 0.264619 | 0.266663 | 0.225669 |
-| 0.50 | 0.331141 | 0.333319 | 0.293118 |
-| 0.75 | 0.414331 | 0.416647 | 0.384767 |
-| 1.00 | 0.500000 | 0.500000 | 0.499687 |
+| p | L2 (4-output) | single-output L1/L2 (reference) |
+| --- | --- | --- |
+| 0.25 | **0.250000** | 0.250000 |
+| 0.30 | 0.266679 | 0.266667 |
+| 0.50 | 0.333333 | 0.333333 |
+| 0.75 | 0.416691 | 0.416667 |
+| 1.00 | 0.500001 | 0.500000 |
 
-The full measurement strictly dominates the single-output one at every p
-(e.g. 0.331141 vs 0.293118 at p = 0.5), and with the TP pin the bound is
-exact at the fully depolarizing point (0.250000 = p).
+(The MOSEK readout at p = 0.25 overshoots by ~1e-4 at this degenerate
+point -- 0.250138 -- so the CLARABEL value is reported; at p = 1 MOSEK
+returns `unknown` and the CLARABEL value stands in.)
+
+Without the completeness relations the extra outputs genuinely helped the
+bound (0.248300 vs 0.209707 at p = 0.25); with them, one-output and
+four-output bounds coincide on the `(2p+1)/6` line at every measured
+point -- the operator-algebra completeness, not the measurement-outcome
+count, was the binding constraint. The bound stays exact at the fully
+depolarizing point (0.250000 = p).
 
 ## Tests
 

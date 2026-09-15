@@ -136,7 +136,11 @@ positions of entry monomials `u† g v`; rather than re-simulating the
 builder's variable-creation order, the helper builds a draft relaxation
 of the problem (the equality blocks are appended after the moment
 blocks, so the draft's block-0 layout is final) and reads the positions
-off `monomial_index` + `column_locations`.
+off `monomial_index` + `column_locations`. A class whose representative
+entry is pinned (a constant moment, including an identically zero word)
+is **not** dropped: each free class member is tied to the pinned constant
+by a constant-equality, so pins reach into the free classes instead of
+silently weakening the relaxation.
 
 SymPy never reorders noncommutative factors, and `Dagger(A*B)` flips the
 order; tests must state products explicitly rather than assuming

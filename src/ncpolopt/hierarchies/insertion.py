@@ -136,11 +136,13 @@ def class_moment_equalities(
     the SDP variable of an entry monomial is created at its first
     upper-triangle occurrence (or reused from its canonicalized adjoint),
     and the equality blocks are appended after the moment blocks, so the
-    draft's block-0 layout is final. Classes whose entries are pinned
-    (constant moments, including identically zero words) carry no
-    variable and are skipped; classes with a single variable occurrence
-    yield a trivially empty equality, mirroring the block count of a
-    hand-written relation list.
+    draft's block-0 layout is final. A class whose representative entry is
+    pinned (a constant moment, including an identically zero word) still
+    constrains the class: each free member is tied to the pinned constant
+    by a constant equality, rather than the relation being dropped
+    (dropping it would lose the pin's reach into the free class). Classes
+    with a single variable occurrence yield no equality, mirroring the
+    block count of a hand-written relation list.
 
     Args:
         problem: The problem the relaxation is built from, WITHOUT these
@@ -175,20 +177,25 @@ def class_moment_equalities(
     row_mats = [word_matrix(w) for w in row_words]
     col_mats = [word_matrix(w) for w in col_words]
 
-    def position(row: int, col: int, g: Any) -> tuple[int, int] | None:
+    def position(row: int, col: int, g: Any) -> tuple[int, int] | complex:
         """The block-0 creation position of the variable of ``u^dagger g v``.
 
-        Returns None for a pinned (constant) class: no variable exists,
-        so the class needs no relation.
+        Returns the ``(r, c)`` position for a free entry, or the pinned
+        constant for a pinned (constant) class member -- so the caller
+        can still tie the free members of the class to the constant
+        instead of dropping the relation.
         """
         monomial = apply_substitutions(
             row_words[row].adjoint() * g * col_words[col], substitutions
         )
-        if monomial == 0 or monomial in pins:
-            return None
+        if monomial == 0:
+            return 0.0
+        if monomial in pins:
+            return pins[monomial]
         adjoint = apply_substitutions(monomial.adjoint(), substitutions)
         if adjoint in pins:
-            return None
+            # The moment of the adjoint monomial is the conjugate pin.
+            return np.conj(pins[adjoint]).item()
         k = draft.monomial_index.get(monomial)
         if k is None:
             k = draft.monomial_index.get(adjoint)
@@ -197,7 +204,7 @@ def class_moment_equalities(
                 f"No moment-matrix occurrence for monomial {monomial} "
                 f"(or its adjoint) at (row={row}, col={col}, g={g})."
             )
-        block, r, c = draft.sdp.column_locations[k]
+        block, r, c = draft.sdp.column_locations[k]  # type: ignore
         if block != block0:
             raise ValueError(
                 f"The variable of monomial {monomial} was created in "
@@ -221,11 +228,18 @@ def class_moment_equalities(
                 i0, j0 = representatives[key]
                 first = position(row, col, g)
                 second = position(i0, j0, g)
-                if first is None or second is None:
-                    continue
-                r1, c1 = first
-                r2, c2 = second
-                momentequalities.append(
-                    MomentEntry(0, r1, c1) - MomentEntry(0, r2, c2)
-                )
+                # A pinned class member carries a constant; the relation
+                # becomes a constant equality on the free member rather
+                # than being dropped (dropping it loses the pin's reach
+                # into the free class and weakens the relaxation).
+                if isinstance(first, tuple) and isinstance(second, tuple):
+                    r1, c1 = first
+                    r2, c2 = second
+                    momentequalities.append(
+                        MomentEntry(0, r1, c1) - MomentEntry(0, r2, c2)
+                    )
+                elif isinstance(first, tuple):
+                    momentequalities.append(MomentEntry(0, first[0], first[1]) - second)
+                elif isinstance(second, tuple):
+                    momentequalities.append(MomentEntry(0, second[0], second[1]) - first)
     return momentequalities

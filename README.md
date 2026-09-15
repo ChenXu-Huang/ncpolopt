@@ -109,9 +109,11 @@ CI (`uv run pytest -m "not slow"`); run them locally with
 [`examples/quantum_memory/`](examples/quantum_memory/README.md) — numerical
 verification of a measurement-device-independent quantum-memory
 certification (depolarizing channel): correlation tables, dual SDPs, and
-moment-matrix relaxations of the NPA-tau form, including a four-output
-Bell-measurement variant solved through the direct sparse backends
-(CLARABEL by default, or MOSEK with `tp_pin=True`).
+moment-matrix relaxations of the NPA-tau form with the generator
+completeness relations imposed (certified bounds on the analytic line
+`(2p+1)/6`), including a four-output Bell-measurement variant solved
+through the direct sparse backends (CLARABEL by default, or MOSEK when a
+license is available).
 
 ## License
 

@@ -4,6 +4,52 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Quantum-memory example: the word set now carries the A0-/B2-side
+  factors `X_x`/`W_y` of the U operators (`x_operators()`/`w_operators()`
+  in `examples/quantum_memory/common.py`), so the generator completeness
+  relations (`X_0 + X_1 = I`, `U_{0,y} + U_{1,y} = W_y`, `sum_alpha
+  V_alpha = I` etc.) are imposed entrywise on both moment blocks
+  (verbatim construction) or lifted into the inserted J/W blocks as
+  linear moment-equalities (factored construction,
+  `_completeness_equalities`/`_linear_span_equalities`).
+- Quantum-memory example: Pauli-decomposition relations of the input
+  projectors — full complex identities `X_x X_z = sum_t c_t X_t`
+  entrywise in the verbatim level-2 construction (restricted 46-word
+  basis), anticommutators `{rho_x, rho_z} = sum_t a_t rho_t` as
+  moment-equalities in the factored construction (72 degree-3
+  extramonomials). With these relations the certified bound sits on the
+  analytic line `(2p+1)/6` at every measured point, for one and four
+  outputs alike.
+
+### Changed
+
+- `class_moment_equalities` no longer drops classes whose representative
+  entry is pinned (a constant moment): each free class member is now tied
+  to the pinned constant by a constant-equality, so pins (including the
+  orthogonal-input zero words) reach into the free classes instead of
+  weakening the relaxation.
+- `npa_tau_relaxation_value` defaults to `solver="clarabel"` (the dense
+  cvxpy canonicalization of the 176/239-word moment matrix no longer
+  fits in memory); the MOSEK backend now solves the 4-output variant
+  without the trace-preserving pin — the completeness moment-equalities
+  cure the ill-posedness that stalled its interior point.
+- Quantum-memory example: the certified level-1/level-2 bounds moved from
+  the degenerate floor `p/(8d)` (unpinned) / TP-pinned values onto the
+  analytic line `(2p+1)/6` (exact at p = 0.25); README tables and test
+  pins re-measured accordingly.
+
+### Removed
+
+- The `tp_pin` parameter of `verbatim_relaxation_value`,
+  `npa_tau_relaxation_value` and their helpers: with the completeness
+  relations in place the trace-preserving pin is redundant (pinned and
+  unpinned bounds coincide), and the MOSEK `tp_pin=True` requirement is
+  gone with it.
+
 ## [0.2.0] — 2026-08-31
 
 ### Added
