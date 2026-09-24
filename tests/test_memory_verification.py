@@ -4,13 +4,15 @@ Numerical checks of the claims of ``verification-of-memory.md``
 (measurement-device-independent verification of a quantum memory; the
 depolarizing-channel example, Rosset-Buscemi-Liang): the correlation table,
 the two dual SDPs equal to the Choi fidelity ``p``, the moment-matrix
-relaxation of eq. (14) at level 1, and the factored NPA-tau re-expression
-of eq. (14) at level 2 with certified non-degenerate values, for both the
-single-output and the full four-output Bell measurement.
+relaxation of eq. (14) at level 1 (the analytic wall ``(2p+1)/6``), the
+operator-parametrized form of eq. (14) attaining the exact ``p`` at level
+2, and the factored NPA-tau re-expression of eq. (14) at level 2 with
+certified exact values, for both the single-output and the full
+four-output Bell measurement.
 
 The NPA-tau re-expression (shared with
 ``examples/quantum_memory/common.py``, imported below) factors
-``U_{x,y} = rho_x (x) I (x) sigma_y`` with the one-direction commutation
+``U_{x,y} = rho_x^T (x) I (x) sigma_y`` with the one-direction commutation
 ``rho_i sigma_j -> sigma_j rho_i``; the orthogonal input states |0> and
 |1> make ``rho_0 rho_1`` and ``sigma_0 sigma_1`` identically zero (both
 orders), so those words drop out of the SDP basis and prune the relation
@@ -18,8 +20,8 @@ set. The regression under test is that the functional class relations
 encode into moment-matrix equalities that resolve to SDP variables -- a
 missing resolution collapses the objective to a degenerate value.
 
-The single-output L2 certification (two multi-minute solves) and the
-4-output factored solves (8-25 minutes each) are marked ``slow`` and
+The single-output L2 certification (a multi-minute solve) and the
+4-output factored solves are marked ``slow`` and
 excluded from CI (``uv run pytest -m "not slow"``); run them locally with
 ``uv run pytest -m slow tests/test_memory_verification.py``.
 """
@@ -279,28 +281,70 @@ def test_relaxation_lower_bound() -> None:
         assert value > 1e-6
 
 
+# --- The eq. (14) relaxation, operator-parametrized (exact at level 2) ------
+
+
+def test_operator_relaxation_exact() -> None:
+    """The operator-parametrized eq. (14) relaxation attains the fidelity p.
+
+    Level 1 (the word set S = {I, U, V} of eq. (11)) sits on the analytic
+    wall (2p+1)/6; level 2 adds the probe words U_{x,y} V_alpha (the
+    degree-2 monomials of S) and attains the exact Choi fidelity p. The
+    regression under test is the probe-word strengthening: without it the
+    Gamma^{(Z)} - Gamma^{(J)} >= 0 constraint is never tested in the
+    directions that see the A2-B2 correlations.
+    """
+    pytest.importorskip("cvxpy")
+    # Measured with CLARABEL/MOSEK: level 2 is exact to solver tolerance.
+    for p in (0.3, 0.5, 0.75, 1.0):
+        value = common.operator_relaxation_value(p, n_outputs=1, level=2)
+        assert value == pytest.approx(p, abs=1e-4)
+        assert value <= p + 1e-5
+    # Level 1 stays on the wall (word-set poverty, not a solver issue).
+    value = common.operator_relaxation_value(0.5, n_outputs=1, level=1)
+    assert value == pytest.approx(1 / 3, abs=1e-4)
+
+
+def test_operator_relaxation_exact_4out() -> None:
+    """The four-output operator relaxation attains p as well.
+
+    The 93-word level-2 word set realifies to 186x186 blocks, which exceed
+    CLARABEL's per-cone memory, so the test requires MOSEK (skipped when
+    no MOSEK with a usable license is installed).
+    """
+    cp = pytest.importorskip("cvxpy")
+    if "MOSEK" not in cp.installed_solvers():
+        pytest.skip("MOSEK not installed")
+    try:
+        value = common.operator_relaxation_value(0.5, n_outputs=4, level=2, solver="MOSEK")
+    except Exception as exc:
+        pytest.skip(f"MOSEK unusable: {exc}")
+    assert value == pytest.approx(0.5, abs=1e-4)
+    assert value <= 0.5 + 1e-5
+
+
 # --- The NPA-tau re-expression: factored, certified values ------------------
 
 
 @pytest.mark.slow
 def test_npa_tau_factored_certified() -> None:
-    """The factored NPA-tau L2 relaxation certifies a non-degenerate bound.
+    """The factored NPA-tau L2 relaxation certifies the exact fidelity p.
 
     One solve of the shared factored construction at the README table's
     anchor point p = 0.5 (direct sparse CLARABEL backend -- the dense
-    cvxpy canonicalization of the 176-word moment matrix does not fit in
-    memory). With the completeness moment-equalities (``rho_0 + rho_1 =
-    I`` etc. lifted into the inserted blocks) no trace-preserving pin is
-    needed: the certified value sits on the analytic line ``(2p+1)/6``
-    (= 1/3 at p = 0.5). The value is the measured one; update with care
-    if the construction changes. It must improve on the pre-completeness
-    verbatim level-1 value (0.0894) and lie in the certified window
-    (0, p]. The solve takes minutes, so the test is marked ``slow`` and
-    excluded from CI.
+    cvxpy canonicalization of the 184-word moment matrix does not fit in
+    memory). With the probe words (``rho_x sigma_y v_0``) in the
+    localizing basis and the functional-linearity moment-equalities, the
+    certified value attains the exact Choi fidelity p = 0.5 (measured
+    0.499999; the pre-fix construction stalled at the analytic line
+    ``(2p+1)/6`` = 1/3). The value is the measured one; update with care
+    if the construction changes. It must improve on the pre-fix wall
+    (1/3) and lie in the certified window (0, p]. The solve takes
+    minutes, so the test is marked ``slow`` and excluded from CI.
     """
     pytest.importorskip("clarabel")
     value = common.npa_tau_relaxation_value(0.5, solver="clarabel")
-    assert value == pytest.approx(0.333333, abs=1e-3)
+    assert value == pytest.approx(0.5, abs=1e-3)
     assert value <= 0.5 + 1e-5
     assert value > 1e-6
 
@@ -313,22 +357,28 @@ def test_factored_npa_tau_construction() -> None:
 
     The orthogonal-input rules (|0> and |1> are orthogonal, so
     ``rho_0 rho_1 -> 0`` and ``sigma_0 sigma_1 -> 0`` in both orders)
-    shrink the SDP: the single-output construction keeps 62 S-basis words
-    and 6339 relations (without the rules it was 66 and 3047). The
-    relation count includes the functional-class equalities (with the
-    constant-equalities tying free class members to pinned classes), the
-    completeness moment-equalities lifting ``rho_0 + rho_1 = I`` (likewise
-    sigma; ``sum_alpha v_alpha = I`` for four outputs) into the inserted
-    blocks, and the Pauli anticommutator moment-equalities
-    (``{rho_x, rho_z} = sum_t a_t rho_t``; 72 extramonomials, 176-word
-    moment matrix). Pin the measured sizes so a change in the reduction
+    shrink the SDP: the single-output construction keeps 62 S-basis
+    words. The probe words ``rho_x sigma_y v_0`` (16 per output count)
+    extend the localizing basis to 42/45 words; with them and their
+    ``g``-products the moment matrices have 184/247 words. The default
+    relation set is the functional-linearity family
+    (``_functional_linearity_equalities``); the full set additionally
+    carries the functional-class equalities (with the
+    constant-equalities tying free class members to pinned classes) and
+    the completeness moment-equalities lifting ``rho_0 + rho_1 = I``
+    (likewise sigma; ``sum_alpha v_alpha = I`` for four outputs) into the
+    inserted blocks. Pin the measured sizes so a change in the reduction
     rules trips the test; the 4-output variant carries the full Bell
     measurement (14 operators, 113 S-basis words).
     """
+    # (operators, s_basis, localizing, extras, block-0 size, relations,
+    # n_vars); the relation count differs between the default
+    # (linearity-only) and the full family set.
     expected = {
-        1: (11, 62, 26, 72, 176, 6339, 10727),
-        4: (14, 113, 29, 72, 239, 13585, 18425),
+        1: (11, 62, 42, 80, 184, 4810, 11279),
+        4: (14, 113, 45, 80, 247, 9562, 18689),
     }
+    expected_full_relations = {1: 12459, 4: 24217}
     for n_outputs, sizes in expected.items():
         data = common._factored_data(n_outputs)
         relations, extras, localizing = common._factored_classes(n_outputs)
@@ -341,17 +391,22 @@ def test_factored_npa_tau_construction() -> None:
         assert len(relations) == rel
         assert sdp.blocks[0].size == extended
         assert sdp.n_vars == n_vars
+        full_relations, _, _ = common._factored_classes(
+            n_outputs, families=("classes", "completeness", "linearity")
+        )
+        assert len(full_relations) == expected_full_relations[n_outputs]
 
 
 def _npa_tau_4out_value() -> float:
     """Solve the 4-output L2 relaxation in a fresh subprocess.
 
-    The direct sparse CLARABEL backend peaks near 3.5 GB on this problem;
-    a long-lived pytest process that already imported cvxpy sits close
-    enough to the commit limit that the solve is occasionally killed by
-    the OS with no traceback. A fresh process keeps the peak low and the
-    test repeatable (the measured value below was produced exactly this
-    way).
+    The direct sparse CLARABEL backend's per-cone memory exceeds this
+    machine's commit limit on the 247-word moment matrix, so the
+    subprocess uses the MOSEK backend; a long-lived pytest process that
+    already imported cvxpy sits close enough to the commit limit that
+    the solve is occasionally killed by the OS with no traceback. A
+    fresh process keeps the peak low and the test repeatable (the
+    measured value below was produced exactly this way).
 
     Returns:
         The certified L2 value at p = 0.5.
@@ -364,29 +419,27 @@ def _npa_tau_4out_value() -> float:
         "warnings.filterwarnings('ignore')\n"
         f"sys.path.insert(0, {example_dir!r})\n"
         "from common import npa_tau_relaxation_value\n"
-        "print(npa_tau_relaxation_value(0.5, solver='cvxpy', n_outputs=4))"
+        "print(npa_tau_relaxation_value(0.5, solver='mosek', n_outputs=4))"
     )
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=3600)
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=7200)
     assert result.returncode == 0, f"4-output solve subprocess failed:\n{result.stderr[-2000:]}"
     return float(result.stdout.strip())
 
 
 @pytest.mark.slow
 def test_npa_tau_factored_certified_4out() -> None:
-    """The 4-output factored NPA-tau L2 relaxation certifies the same bound.
+    """The 4-output factored NPA-tau L2 relaxation certifies the exact p.
 
     The full four-output Bell measurement adds three measurement outputs
     (14 operators instead of 11): at p = 0.5 the L2 value (direct sparse
-    backend, one fresh subprocess) coincides with the single-output one on
-    the ``(2p+1)/6`` line (= 1/3) -- with the completeness
-    moment-equalities in place, neither the extra outputs nor a
-    trace-preserving pin add anything. The solve takes 8-25 minutes
-    (CLARABEL) or a few minutes (MOSEK), so the test is marked ``slow``
+    backend, one fresh subprocess) attains the exact Choi fidelity
+    p = 0.5 like the single-output variant. The solve takes up to an hour
+    with the probe-word-extended basis, so the test is marked ``slow``
     and excluded from CI; run locally with
     ``uv run pytest -m slow tests/test_memory_verification.py``.
     """
     pytest.importorskip("cvxpy")
     value = _npa_tau_4out_value()
-    assert value == pytest.approx(0.333333, abs=1e-3)
+    assert value == pytest.approx(0.5, abs=1e-3)
     assert value <= 0.5 + 1e-5
     assert value > 1e-6

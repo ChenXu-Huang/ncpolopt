@@ -2,23 +2,18 @@
 
 Implements the operators, channel and correlations of the document
 ``verification-of-memory.md`` (measurement-device-independent verification
-of a quantum memory; the depolarizing-channel example), together with two
-SDP constructions that verify its moment-matrix relaxation:
+of a quantum memory; the depolarizing-channel example), together with
+three SDP constructions of its moment-matrix relaxation (eq. (14)):
 
-* :func:`verbatim_relaxation_value` -- the relaxation of eq. (14) of the
-  document, assembled directly with cvxpy over the word set generated
-  from the operator set :math:`S`, for a single-output or the full
-  four-output Bell measurement.
+* :func:`verbatim_relaxation_value` -- the relaxation assembled directly
+  with cvxpy, one variable per functional class of the moment entries.
+* :func:`operator_relaxation_value` -- eq. (14) as written: the entries
+  are traces against the genuine Hermitian operators ``J`` and ``Z``.
 * :func:`npa_tau_relaxation_value` -- the same relaxation re-expressed as
   a standard NPA problem on the extended algebra
   :math:`S \\cup \\{J, W\\}` with the maximally mixed state, solved
-  through the public ncpolopt API for one output, or through the
-  package's direct sparse CLARABEL backend (``solver="clarabel"``) for
-  the four-output variant (the dense cvxpy conversion cannot hold its
-  199-word moment matrix). The trace pins and the functional-class
-  moment-equalities come from the package's operator-insertion helpers
-  (:func:`ncpolopt.hierarchies.trace_moment_pins` and
-  :func:`ncpolopt.hierarchies.class_moment_equalities`).
+  through the public ncpolopt API (one output) or the package's direct
+  sparse CLARABEL backend (four outputs).
 
 Conventions follow the document: :math:`d = 2`, the auxiliary system
 :math:`A_0` and the memory output :math:`A_2` are qubits, the Choi state
@@ -33,14 +28,11 @@ package.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from sympy import S
-
-logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import cvxpy as cp
@@ -146,8 +138,8 @@ def werner_state(p: float) -> np.ndarray:
 
 
 def choi_fidelity(p: float) -> float:
-    """Return the Choi fidelity ``<phi+|J_M|phi+>`` (the document's eq. (4)
-    value for the identity extraction map).
+    """Return the Choi fidelity ``<phi+|J_M|phi+>`` (eq. (4) for the
+    identity extraction map).
 
     Args:
         p: The channel parameter.
@@ -308,9 +300,8 @@ def build_words(
     words.extend(xs)
     words.extend(ws)
     if level >= 2:
-        # Products of two level-1 words only; iterating over the live
-        # ``words`` list (as originally written) re-appends products of
-        # products, compounding to unbounded word length.
+        # Products of two level-1 words only; iterating the live ``words``
+        # list would re-append products of products without bound.
         base = words[1:]
         for a in base:
             for b in base:
@@ -330,8 +321,7 @@ def partial_trace_b2(x: np.ndarray) -> np.ndarray:
         The 4x4 partial trace over B2.
     """
     x4 = x.reshape(DIM, DIM, DIM, DIM, DIM, DIM)
-    # The partial trace keeps only the diagonal pairs (b2, b2') = b2 == b2';
-    # a plain .sum(axis=(2, 5)) would trace over B2 x B2' together.
+    # Keep only the diagonal pairs (b2, b2') of the traced-out subsystem.
     return np.einsum("abcdec->abde", x4).reshape(4, 4)
 
 
@@ -465,10 +455,7 @@ def verbatim_relaxation_value(
         level: 1 for the plain word set; >= 2 adds the Pauli product words
             (``X_x X_z``, ``W_y W_z``) and imposes the full complex
             Pauli-decomposition relations ``X_x X_z = sum_t c_t X_t``
-            entrywise on both blocks. (The full level-2 product closure --
-            270 words -- canonicalizes to tens of GB in cvxpy; the Pauli
-            relations make the degree-2 columns linear in the degree-1
-            columns, so the restricted word set suffices.)
+            entrywise on both blocks.
         solver: A cvxpy solver name (default "CLARABEL").
 
     Returns:
@@ -485,11 +472,8 @@ def verbatim_relaxation_value(
     )
     if level >= 2:
         # Level 2 adds only the Pauli product words (X_x X_z and W_y W_z,
-        # needed as the columns of the Pauli relations). The full level-2
-        # product closure (270 words incl. U.U', U.V, ...) canonicalizes
-        # to tens of GB of dense data in cvxpy and contributes nothing:
-        # the Pauli relations make the degree-2 columns linear in the
-        # degree-1 columns.
+        # needed as the columns of the Pauli relations); the full level-2
+        # product closure would canonicalize to tens of GB in cvxpy.
         for mats in (x_operators(), w_operators()):
             for a in range(4):
                 for b in range(4):
@@ -509,8 +493,7 @@ def verbatim_relaxation_value(
                 i_v = 1 + 16 + alpha
                 constraints.append(m[i_v, i_u] == correlations_via_choi(p, x, y, alpha) / DIM)
 
-    # Completeness relations, column-vectorized on both blocks (one vector
-    # equality per relation and block: tens of thousands of scalar
+    # Completeness relations, column-vectorized on both blocks (scalar
     # equalities would explode cvxpy's canonicalization). Word layout:
     # [I, U (16), V (n_outputs), X (4), W (4)].
     i_x = 1 + 16 + n_outputs
@@ -528,11 +511,7 @@ def verbatim_relaxation_value(
     # The full complex Pauli-decomposition relations between the degree-2
     # and degree-1 words, ``X_x X_z = sum_t c_t X_t`` (transposed product)
     # and ``W_y W_z = sum_t c_t W_t``, column-vectorized on both blocks.
-    # The class variables are complex where the functional is
-    # non-self-adjoint, so the genuinely complex coefficients are
-    # expressible here (unlike in the real factored relaxation, which gets
-    # the anticommutators only). Only available at level >= 2, where the
-    # products are words.
+    # Only available at level >= 2, where the products are words.
     if level >= 2:
         coeffs = _pauli_word_coefficients()
 
@@ -568,31 +547,123 @@ def verbatim_relaxation_value(
     return float(problem.value)
 
 
+def _realify(mat: np.ndarray) -> np.ndarray:
+    """The doubled real symmetric form ``[[Re, -Im], [Im, Re]]`` of a
+    Hermitian matrix (PSD iff the complex matrix is PSD)."""
+    return np.block([[mat.real, -mat.imag], [mat.imag, mat.real]])
+
+
+def operator_relaxation_value(
+    p: float,
+    n_outputs: int = 1,
+    level: int = 2,
+    solver: str | None = None,
+) -> float:
+    """Solve the document's eq. (14) relaxation in operator form with cvxpy.
+
+    Unlike :func:`verbatim_relaxation_value` -- which relaxes the moment
+    matrices to one free variable per functional class -- this keeps the
+    genuine operator degrees of freedom: the entries are
+    ``M[u, v] = Tr[G_{u,v} J]`` and ``L[u, v] = Tr[H_{u,v} Z]`` with the
+    unknown Hermitian operators ``J`` (4x4) and ``Z`` (2x2) as the SDP
+    variables (20 real degrees of freedom). ``M >= 0`` and ``L >= 0`` are
+    implied by ``J >= 0`` and ``Z >= 0`` and are not imposed separately.
+
+    The word set is the monomials of the document's operator set
+    ``S = {I, U, V}``: level 1 is ``S`` itself; level 2 adds the degree-2
+    monomials ``U_{x,y} V_alpha`` (the probe words).
+
+    All complex Hermitian blocks are realified by hand (``[[Re, -Im], [Im,
+    Re]]``), so the SDP is real; the correlation pins are equalities on the
+    real parts (the pinned functionals are Hermitian, so the imaginary
+    parts vanish automatically).
+
+    Args:
+        p: The channel parameter.
+        n_outputs: Number of measurement outputs (1 or 4).
+        level: 1 for the plain word set; >= 2 adds the probe words
+            ``U_{x,y} V_alpha``.
+        solver: A cvxpy solver name; defaults to MOSEK when installed
+            (the 4-output level-2 realified blocks exceed CLARABEL's
+            per-cone memory), else CLARABEL.
+
+    Returns:
+        The optimal value (the certified fidelity lower bound).
+
+    Raises:
+        RuntimeError: If the solver status is neither "optimal" nor
+            "optimal_inaccurate".
+    """
+    import cvxpy as cp
+
+    if solver is None:
+        solver = "MOSEK" if "MOSEK" in cp.installed_solvers() else "CLARABEL"
+
+    us = u_operators()
+    vs = v_operators(n_outputs)
+    words = [np.eye(8, dtype=complex), *us, *vs]
+    if level >= 2:
+        words.extend(u @ v for u in us for v in vs)
+    n = len(words)
+    dag = [w.T.conj() for w in words]
+    g_mats = [[partial_trace_b2(words[j] @ dag[i]) for j in range(n)] for i in range(n)]
+    h_mats = [[partial_trace_a0b2(words[j] @ dag[i]) for j in range(n)] for i in range(n)]
+
+    j_basis = _hermitian_basis(4)
+    z_basis = _hermitian_basis(2)
+    t_j = cp.Variable(len(j_basis))
+    t_z = cp.Variable(len(z_basis))
+
+    # Coefficient matrices: M = sum_k t_j[k] * GM_k with
+    # GM_k[i, j] = Tr[G_{ij} B_k]; likewise for L over the Z basis.
+    gm = [np.array([[np.trace(g_mats[i][j] @ b) for j in range(n)] for i in range(n)]) for b in j_basis]
+    hm = [np.array([[np.trace(h_mats[i][j] @ b) for j in range(n)] for i in range(n)]) for b in z_basis]
+    gm = [(m + m.conj().T) / 2 for m in gm]  # exact Hermiticity
+    hm = [(m + m.conj().T) / 2 for m in hm]
+
+    d_real = sum(t_z[k] * _realify(hm[k]) for k in range(len(z_basis))) - sum(
+        t_j[k] * _realify(gm[k]) for k in range(len(j_basis))
+    )
+    j_real = sum(t_j[k] * _realify(b) for k, b in enumerate(j_basis))
+    z_real = sum(t_z[k] * _realify(b) for k, b in enumerate(z_basis))
+    constraints: list[object] = [j_real >> 0, z_real >> 0, d_real >> 0]
+    for alpha in range(n_outputs):
+        for x in range(4):
+            for y in range(4):
+                i_u = 1 + 4 * x + y
+                i_v = 1 + 16 + alpha
+                pin = sum(t_j[k] * gm[k][i_v, i_u].real for k in range(len(j_basis)))
+                constraints.append(pin == correlations_via_choi(p, x, y, alpha) / DIM)
+
+    # H_{0,0} = Tr_{A0,B2}(I) = 4 I_2, so L[I, I] = 4 Tr(Z) and the
+    # objective L[I, I]/d^3 = Tr(Z)/2, matching eq. (9).
+    obj = sum(t_z[k] * hm[k][0, 0].real for k in range(len(z_basis))) / DIM**3
+    problem = cp.Problem(cp.Minimize(obj), constraints)
+    problem.solve(solver=solver)
+    if problem.status not in ("optimal", "optimal_inaccurate"):
+        raise RuntimeError(f"Operator relaxation failed with status {problem.status!r}.")
+    return float(problem.value)
+
+
 # --- The factored NPA-tau re-expression (Brown-style) -----------------------
 #
 # The U operators factor on H_{A0} x H_{A2} x H_{B2} as
-# ``U_{x,y} = rho_x (x) I (x) sigma_y``, so the level-2 basis over the
-# algebra {rho, sigma, v, J, W} (13 or 14 generators for 1 or 4 outputs)
+# ``U_{x,y} = rho_x^T (x) I (x) sigma_y``, so the level-2 basis over the
+# algebra {rho, sigma, v, J, W} (11 or 14 generators for 1 or 4 outputs)
 # collapses under the one-direction commutation ``rho_i sigma_j ->
-# sigma_j rho_i`` and the orthogonal-input rules to 136 extended-basis
-# words with one output, 199 with four. The degree-3 words ``g U_{x,y}``
-# (``g`` in {J, W}) are added as extramonomials: the U-pair entries
-# ``<U^dagger g U'>`` (degree 5) then exist in the moment matrix, the
-# localizing matrices can run over the ``{1, rho, sigma, v} U {U_{x,y}}``
-# basis (26 or 29 words), and the functional-class equalities of
-# eqs. (12)/(13) become writable as block-0 moment-equalities. The
-# orthogonal input states |0> and |1> make ``rho_0 rho_1`` and
-# ``sigma_0 sigma_1`` identically zero (both orders), so those words drop
-# out of the basis entirely and shrink the SDP; the class-relation links
-# into the dropped (zero) classes survive as constant-equalities
-# ``var = 0`` generated by ``class_moment_equalities``, so the reduction
-# no longer weakens the relaxation.
-# Everything below is independent of the channel parameter ``p`` except the
-# moment VALUES, so the relation set is computed once per
-# ``n_outputs`` and cached.
+# sigma_j rho_i`` and the orthogonal-input rules. The degree-3 words
+# ``g U_{x,y}`` (``g`` in {J, W}) are added as extramonomials so the
+# U-pair entries ``<U^dagger g U'>`` exist in the moment matrix and the
+# functional-class equalities of eqs. (12)/(13) become writable as block-0
+# moment-equalities. The probe words ``rho_x sigma_y v_0`` (the degree-2
+# monomials ``U_{x,y} V_0`` of the document's operator set) and their
+# ``g``-products join them as extramonomials, extending the localizing
+# basis to ``{1, rho, sigma, v} U {U_{x,y}} U {probe}``. Everything below
+# is independent of the channel parameter ``p`` except the moment VALUES,
+# so the relation set is computed once per configuration and cached.
 
 _FACTORED_DATA: dict[int, dict[Any, Any]] = {}
-_FACTORED_CLASSES: dict[int, tuple[list[object], list[object], list[object]]] = {}
+_FACTORED_CLASSES: dict[tuple, tuple[list[object], list[object], list[object]]] = {}
 
 
 def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
@@ -605,19 +676,16 @@ def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
     one-direction commutation ``rho_i sigma_j -> sigma_j rho_i``, the
     rules include the orthogonality of the input states |0> and |1>:
     ``rho_0 rho_1 -> 0`` and ``sigma_0 sigma_1 -> 0`` in both orders.
-    Every moment involving such a zero word is identically 0, so the words
-    drop out of the SDP basis and shrink the problem; the class relations
-    that referenced the dropped classes survive as constant-equalities
-    ``var = 0`` (see
-    :func:`ncpolopt.hierarchies.class_moment_equalities`).
 
     Args:
         n_outputs: The number of measurement outputs (1 or 4).
 
     Returns:
-        A dict with the operator list, the substitution rules, the S-basis
-        (62 words for one output, 113 for four), the 8x8 S-generator
-        matrices, and a helper mapping S-basis words to explicit matrices.
+        A dict with the operator list, the substitution rules, the
+        S-basis, the 8x8 S-generator matrices, the probe words
+        ``rho_x sigma_y v_0`` (the degree-2 monomials ``U_{x,y} V_0`` of
+        the document's operator set), and a helper mapping S-basis words
+        to explicit matrices.
 
     Raises:
         ValueError: If ``n_outputs`` is not 1 or 4.
@@ -628,6 +696,7 @@ def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
     if n_outputs not in (1, 4):
         raise ValueError(f"n_outputs must be 1 or 4, got {n_outputs}.")
     from ncpolopt import generate_operators, get_all_monomials
+    from ncpolopt.substitutions import apply_substitutions
 
     rhos = generate_operators("rho", 4, hermitian=True)
     sigmas = generate_operators("sigma", 4, hermitian=True)
@@ -650,14 +719,18 @@ def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
         for sigma in sigmas:
             substitutions[rho * sigma] = sigma * rho
     # The input states |0> and |1> are orthogonal, so rho_0 rho_1 = 0 and
-    # sigma_0 sigma_1 = 0 in both orders; the zero words and every moment
-    # involving them drop out of the SDP (their values are identically 0).
+    # sigma_0 sigma_1 = 0 in both orders; the zero words and their moments
+    # drop out of the SDP.
     substitutions[rhos[0] * rhos[1]] = 0
     substitutions[rhos[1] * rhos[0]] = 0
     substitutions[sigmas[0] * sigmas[1]] = 0
     substitutions[sigmas[1] * sigmas[0]] = 0
 
-    rho_mats = [np.kron(np.kron(pj, np.eye(DIM)), np.eye(DIM)) for pj in input_projectors()]
+    # Eq. (10) puts rho_x^T on the A0 side, and the transpose matters:
+    # rho_3 = |+i><+i| is not symmetric. Without it the correlation pins
+    # would force the J-insert moments to those of the non-PSD partial
+    # transpose J_M^{T_A0}.
+    rho_mats = [np.kron(np.kron(pj.T, np.eye(DIM)), np.eye(DIM)) for pj in input_projectors()]
     sigma_mats = [np.kron(np.kron(np.eye(DIM), np.eye(DIM)), pj) for pj in input_projectors()]
     v_mats = [np.kron(np.eye(DIM), phi) for phi in bell_projectors()[:n_outputs]]
 
@@ -666,6 +739,17 @@ def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
     s_mats.update(zip(sigmas, sigma_mats, strict=True))
     s_mats.update(zip(vs, v_mats, strict=True))
     s_basis = get_all_monomials(s_generators, None, substitutions, 2)
+
+    # The probe words rho_x sigma_y v_0 (canonically sigma_y rho_x v_0):
+    # the factored image of the degree-2 monomials U_{x,y} V_0 of the
+    # document's operator set S (eq. (11)), with V_0 the |phi+><phi+|
+    # output. Only the V_0 probes are used: one probe per (x, y) keeps the
+    # four-output moment matrix solvable.
+    probe_words = [
+        apply_substitutions(rhos[x] * sigmas[y] * vs[0], substitutions)
+        for x in range(4)
+        for y in range(4)
+    ]
 
     def word_matrix(word: Any) -> np.ndarray:
         """The explicit 8x8 matrix of an S-basis word (word order = product order)."""
@@ -684,6 +768,7 @@ def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
         "s_basis": s_basis,
         "s_mats": s_mats,
         "word_matrix": word_matrix,
+        "probe_words": probe_words,
         "vs": vs,
         "j": j,
         "w": w,
@@ -698,11 +783,8 @@ def _factored_moments(p: float, n_outputs: int = 1) -> dict[object, object]:
     mixed state by :func:`ncpolopt.hierarchies.trace_moment_pins`
     (symmetrized to their real part: with ``complex_matrix=False`` the
     consistent pin of a genuinely complex moment is
-    ``(m + m.adjoint())/2 = Re Tr[word]/8``, and the real part of the
-    true quantum moment matrix stays feasible, so the relaxation remains
-    a valid lower bound). No trace-preserving pin is needed: the
-    completeness moment-equalities make the TP constraint redundant (the
-    unpinned and pinned bounds coincide).
+    ``(m + m.adjoint())/2 = Re Tr[word]/8``). No trace-preserving pin is
+    applied.
 
     Args:
         p: The channel parameter.
@@ -717,7 +799,7 @@ def _factored_moments(p: float, n_outputs: int = 1) -> dict[object, object]:
     data = _factored_data(n_outputs)
     substitutions = data["substitutions"]
     moments: dict[object, object] = trace_moment_pins(
-        data["s_basis"],
+        [*data["s_basis"], *data["probe_words"]],
         data["word_matrix"],
         substitutions=substitutions,
         force_real=True,
@@ -734,24 +816,40 @@ def _factored_moments(p: float, n_outputs: int = 1) -> dict[object, object]:
     return moments
 
 
-def _factored_classes(n_outputs: int = 1) -> tuple[list[object], list[object], list[object]]:
+def _factored_classes(
+    n_outputs: int = 1,
+    *,
+    probes: bool = True,
+    families: tuple[str, ...] = ("linearity",),
+) -> tuple[list[object], list[object], list[object]]:
     """The p-independent class equalities, extramonomials and localizing basis.
 
-    The pinned-class checks depend only on the moment KEYS, which do not
-    change with ``p``, so the relation set is computed once per
-    ``n_outputs`` and cached. The equalities themselves
-    are generated by :func:`ncpolopt.hierarchies.class_moment_equalities`
-    from a draft build of the relaxation at ``p = 0.5`` (the draft's
-    block-0 layout is final: the equality blocks are appended after the
-    moment blocks).
+    The relation set depends only on the moment KEYS, which do not change
+    with ``p``, so it is computed once per configuration and cached. The
+    class equalities are generated from a draft build of the relaxation at
+    ``p = 0.5`` (the draft's block-0 layout is final: the equality blocks
+    are appended after the moment blocks).
 
     Args:
         n_outputs: The number of measurement outputs (1 or 4).
+        probes: Add the probe words ``rho_x sigma_y v_0`` (the
+            degree-2 monomials ``U_{x,y} V_0`` of the document's
+            operator set) to the localizing basis, with the words and
+            their ``g``-products as extramonomials.
+        families: The moment-equality families to generate:
+            ``"linearity"`` (the functional-linearity relations of
+            :func:`_functional_linearity_equalities`), ``"classes"``
+            (the functional-class equalities of ``class_moment_equalities``),
+            ``"completeness"`` (the ``rho_0 + rho_1 = I``-type word
+            relations), and ``"pauli"`` (the Pauli anticommutator
+            relations). The default keeps only ``"linearity"`` (the
+            smallest, linearly independent set).
 
     Returns:
         The triple ``(momentequalities, extramonomials, localizing_basis)``.
     """
-    cached = _FACTORED_CLASSES.get(n_outputs)
+    cache_key = (n_outputs, probes, families)
+    cached = _FACTORED_CLASSES.get(cache_key)
     if cached is not None:
         return cached
     from ncpolopt.hierarchies import class_moment_equalities
@@ -764,30 +862,42 @@ def _factored_classes(n_outputs: int = 1) -> tuple[list[object], list[object], l
     rhos, sigmas = operators[:4], operators[4:8]
 
     u_words = [apply_substitutions(rhos[x] * sigmas[y], substitutions) for x in range(4) for y in range(4)]
+    probe_words = list(data["probe_words"]) if probes else []
     extras = [
         apply_substitutions(g * u_word, substitutions)
         for g in (j, w)
         for u_word in u_words
     ]
+    # The probe words (degree 3) and their g-products (degree 4) must be
+    # extramonomials: the level-2 basis only spans degrees <= 2. As
+    # extramonomials the probes exist as block-0 rows/columns (their
+    # S-moments are trace-pinned) and the g-products provide the columns
+    # for the localizing entries <probe^dagger g probe'> (degree 7).
+    extras += probe_words
+    extras += [
+        apply_substitutions(g * probe, substitutions)
+        for g in (j, w)
+        for probe in probe_words
+    ]
     # NOTE: the completeness relations' term monomials ``u^dagger g rho_x``
     # etc. need no generator-level extras: ``g.rho_x`` (degree 2) is already
-    # in the level-2 word set, so the terms exist as moment-matrix entries
-    # of the un-augmented basis (verified: identical relation counts with
-    # and without ``g.rho``/``g.sigma``/``g.v`` extras).
-    # The Pauli anticommutator relations need the degree-3 words
-    # ``g.(rho_x rho_z)`` / ``g.(sigma_y sigma_z)`` as extramonomials.
-    pauli_specs, pauli_words = _pauli_relation_specs(operators)
-    extras += [
-        apply_substitutions(g * word, substitutions)
-        for g in (j, w)
-        for word in pauli_words
-    ]
+    # in the level-2 word set.
+    if "pauli" in families:
+        # The Pauli anticommutator relations need the degree-3 words
+        # ``g.(rho_x rho_z)`` / ``g.(sigma_y sigma_z)`` as extramonomials.
+        pauli_specs, pauli_words = _pauli_relation_specs(operators)
+        extras += [
+            apply_substitutions(g * word, substitutions)
+            for g in (j, w)
+            for word in pauli_words
+        ]
     # The localizing matrices run over the {1, rho, sigma, v} U {U_{x,y}}
-    # basis (26 or 29 words): the degree-2 U words are admissible because
-    # their ``g U`` products are the extramonomials, so every localizing
-    # entry monomial ``u^dagger g w`` (degree <= 5) exists as a
+    # U {probe} basis: the degree-2 U words and degree-3 probe words are
+    # admissible because their ``g`` products are the extramonomials, so
+    # every localizing entry monomial ``u^dagger g w`` exists as a
     # moment-matrix entry.
-    localizing_basis = [S.One, *rhos, *sigmas, *vs, *u_words]
+    localizing_basis = [S.One, *rhos, *sigmas, *vs, *u_words, *probe_words]
+    row_words = [*data["s_basis"], *probe_words]
 
     draft_problem = _assemble_npa_tau_problem(
         data,
@@ -796,23 +906,88 @@ def _factored_classes(n_outputs: int = 1) -> tuple[list[object], list[object], l
         extras=extras,
         localizing_basis=localizing_basis,
     )
-    momentequalities = class_moment_equalities(
-        draft_problem,
-        2,
-        inserted=((j, partial_trace_b2), (w, partial_trace_a0b2)),
-        row_words=list(data["s_basis"]),
-        col_words=localizing_basis,
-        word_matrix=data["word_matrix"],
-    )
-    momentequalities = [
-        *momentequalities,
-        *_completeness_equalities(draft_problem, data, localizing_basis, n_outputs),
-        *_pauli_equalities(draft_problem, data, localizing_basis, pauli_specs),
-    ]
+    resolver = _moment_resolver(draft_problem)
+    momentequalities: list[object] = []
+    if "classes" in families:
+        momentequalities += class_moment_equalities(
+            draft_problem,
+            2,
+            inserted=((j, partial_trace_b2), (w, partial_trace_a0b2)),
+            row_words=row_words,
+            col_words=localizing_basis,
+            word_matrix=data["word_matrix"],
+        )
+    if "completeness" in families:
+        momentequalities += _completeness_equalities(
+            draft_problem, data, localizing_basis, n_outputs, resolver=resolver
+        )
+    if "linearity" in families:
+        momentequalities += _functional_linearity_equalities(
+            draft_problem, data, row_words, localizing_basis, resolver=resolver
+        )
+    if "pauli" in families:
+        momentequalities += _pauli_equalities(
+            draft_problem, data, localizing_basis, pauli_specs, resolver=resolver
+        )
 
     cached = (momentequalities, extras, localizing_basis)
-    _FACTORED_CLASSES[n_outputs] = cached
+    _FACTORED_CLASSES[cache_key] = cached
     return cached
+
+
+def _moment_resolver(
+    problem: Problem,
+) -> Callable[[object], tuple[int, int] | float | None]:
+    """The block-0 position/constant resolver of a draft build of ``problem``.
+
+    Args:
+        problem: The draft problem (final pins, extras and localizing
+            monomials, without moment equalities).
+
+    Returns:
+        A function mapping a moment monomial to a ``(row, col)`` tuple
+        (its block-0 SDP variable position), a float (a pinned or
+        vanishing moment's value), or None when the monomial has no
+        moment-matrix occurrence.
+
+    Raises:
+        RuntimeError: If a moment's variable was created outside block 0.
+    """
+    from ncpolopt.relaxation import NpaRelaxation
+    from ncpolopt.substitutions import apply_substitutions
+
+    substitutions = dict(problem.substitutions) if problem.substitutions is not None else {}
+    pins = problem.momentsubstitutions or {}
+    draft = NpaRelaxation(problem, 2)
+    block0 = draft.moment_block_indices[0]
+
+    def resolve(monomial: object) -> tuple[int, int] | float | None:
+        """The block-0 position or pinned value of a moment; None if absent.
+
+        A ``(row, col)`` tuple locates the moment's SDP variable in block
+        0; a float is the pinned (or vanishing) value. NOTE: the returned
+        position may be the creation position of the monomial's adjoint;
+        in a real relaxation both resolve to the same variable.
+        """
+        monomial = apply_substitutions(monomial, substitutions)
+        if monomial == 0:
+            return 0.0
+        if monomial in pins:
+            return float(np.real(pins[monomial]))
+        adjoint = apply_substitutions(monomial.adjoint(), substitutions)
+        if adjoint in pins:
+            return float(np.real(np.conj(pins[adjoint])))
+        k = draft.monomial_index.get(monomial)
+        if k is None:
+            k = draft.monomial_index.get(adjoint)
+        if k is None:
+            return None
+        block, r, c = draft.sdp.column_locations[k]
+        if block != block0:
+            raise RuntimeError(f"monomial {monomial} created in block {block}, not block {block0}")
+        return (r, c)
+
+    return resolve
 
 
 def _linear_span_equalities(
@@ -821,6 +996,7 @@ def _linear_span_equalities(
     localizing_basis: list[object],
     relations: list[list[tuple[float, object]]],
     label: str,
+    resolver: Callable[[object], tuple[int, int] | float | None] | None = None,
 ) -> list[object]:
     """Linear moment equalities lifting linear word relations into the
     inserted (J/W) blocks.
@@ -842,7 +1018,10 @@ def _linear_span_equalities(
         data: The factored-algebra data of :func:`_factored_data`.
         localizing_basis: The column words of the localizing blocks.
         relations: The relation specs as ``(coefficient, factor)`` lists.
-        label: A tag for the debug statistics.
+        label: A tag identifying the relation family in error messages.
+        resolver: The block-0 resolver of :func:`_moment_resolver`; built
+            from ``problem`` when not given. Pass a shared resolver when
+            generating several relation families for the same problem.
 
     Returns:
         The moment-equality list.
@@ -852,38 +1031,11 @@ def _linear_span_equalities(
             the pins.
     """
     from ncpolopt.moment import MomentEntry, MomentExpr
-    from ncpolopt.relaxation import NpaRelaxation
-    from ncpolopt.substitutions import apply_substitutions
 
-    substitutions = data["substitutions"]
     j, w_op = data["j"], data["w"]
-    pins = problem.momentsubstitutions or {}
-
-    draft = NpaRelaxation(problem, 2)
-    block0 = draft.moment_block_indices[0]
-
-    def resolve(monomial: object) -> tuple[str, float, float] | None:
-        """The block-0 position or constant of a moment; None if absent."""
-        monomial = apply_substitutions(monomial, substitutions)
-        if monomial == 0:
-            return ("const", 0.0)
-        if monomial in pins:
-            return ("const", float(np.real(pins[monomial])))
-        adjoint = apply_substitutions(monomial.adjoint(), substitutions)
-        if adjoint in pins:
-            return ("const", float(np.real(np.conj(pins[adjoint]))))
-        k = draft.monomial_index.get(monomial)
-        if k is None:
-            k = draft.monomial_index.get(adjoint)
-        if k is None:
-            return None
-        block, r, c = draft.sdp.column_locations[k]
-        if block != block0:
-            raise RuntimeError(f"monomial {monomial} created in block {block}, not block {block0}")
-        return ("var", r, c)
+    resolve = resolver if resolver is not None else _moment_resolver(problem)
 
     equalities: list[object] = []
-    stats: dict[tuple[int, int], list[int]] = {}
     for gi, g in enumerate((j, w_op)):
         for ri, rel in enumerate(relations):
             for u in data["s_basis"]:
@@ -898,14 +1050,12 @@ def _linear_span_equalities(
                         if resolved is None:
                             missing = True
                             break
-                        if resolved[0] == "var":
-                            terms.append(MomentEntry(0, resolved[1], resolved[2], coeff))
+                        if isinstance(resolved, tuple):
+                            terms.append(MomentEntry(0, resolved[0], resolved[1], coeff))
                         else:
-                            constant += coeff * resolved[1]
+                            constant += coeff * resolved
                     if missing:
-                        stats.setdefault((gi, ri), [0, 0])[1] += 1
                         continue
-                    stats.setdefault((gi, ri), [0, 0])[0] += 1
                     expr = MomentExpr(tuple(terms))
                     if not expr.terms:
                         # Fully constant relation: a consistency check.
@@ -918,8 +1068,168 @@ def _linear_span_equalities(
                     if constant != 0.0:
                         terms.append(MomentEntry(coefficient=constant))
                     equalities.append(MomentExpr(tuple(terms)))
-    for (gi, ri), (kept, skipped) in sorted(stats.items()):
-        logger.debug("%s g=%d rel=%d: %d kept, %d skipped", label, gi, ri, kept, skipped)
+    return equalities
+
+
+def _hermitian_basis(dim: int) -> list[np.ndarray]:
+    """A real basis of the ``dim x dim`` Hermitian matrices (``dim**2``
+    elements): diagonal units, symmetric and antisymmetric-imaginary
+    off-diagonals.
+
+    Args:
+        dim: The matrix dimension.
+
+    Returns:
+        The basis matrices.
+    """
+    basis = []
+    for a in range(dim):
+        mat = np.zeros((dim, dim), dtype=complex)
+        mat[a, a] = 1.0
+        basis.append(mat)
+    for a in range(dim):
+        for b in range(a + 1, dim):
+            re = np.zeros((dim, dim), dtype=complex)
+            re[a, b] = re[b, a] = 1.0
+            basis.append(re)
+            im = np.zeros((dim, dim), dtype=complex)
+            im[a, b] = 1j
+            im[b, a] = -1j
+            basis.append(im)
+    return basis
+
+
+def _functional_linearity_equalities(
+    problem: Problem,
+    data: dict[Any, Any],
+    row_words: list[object],
+    col_words: list[object],
+    resolver: Callable[[object], tuple[int, int] | float | None] | None = None,
+) -> list[object]:
+    """Moment equalities enforcing the functional linearity of the
+    inserted (J/W) blocks.
+
+    In the matrix model the inserted-block moment ``<u^dagger g v>``
+    equals ``Tr[G_{u,v} T_g]`` with the functional ``G_{u,v} =
+    trace_fn(v u^dagger)`` and ``T_g`` the inserted Hermitian operator,
+    so the moments are linear in the functional. The relaxation is real,
+    so the relations are taken over the real coordinates of the Hermitian
+    parts of the functionals (``Re <u^dagger g v> = Tr[(G + G^dagger)/2
+    T]``; the coordinate basis is :func:`_hermitian_basis`).
+
+    For each inserted operator the grid of ``(u, v)`` moments is grouped
+    by the SDP variable (or pinned constant) it resolves to, a greedy
+    pivot set of independent functional vectors is chosen, and every
+    other group's relation ``m = sum_a A_a m_a`` is emitted as one moment
+    equality. This subsumes the class equalities on the grid (equal
+    functionals get equal expansions) but not the word-relation lifts of
+    :func:`_completeness_equalities`/:func:`_pauli_equalities`, which
+    constrain moments whose column words are products rather than basis
+    words.
+
+    Args:
+        problem: The draft problem (final pins, extras and localizing
+            monomials, without moment equalities).
+        data: The factored-algebra data of :func:`_factored_data`.
+        row_words: The row words of the class grid (the S-basis plus the
+            probe words).
+        col_words: The column words (the localizing basis).
+        resolver: The block-0 resolver of :func:`_moment_resolver`; built
+            from ``problem`` when not given.
+
+    Returns:
+        The moment-equality list.
+
+    Raises:
+        RuntimeError: If a group of moments sharing one SDP variable has
+            inconsistent functionals, or a fully-constant relation is
+            inconsistent with the pins.
+    """
+    from ncpolopt.moment import MomentEntry, MomentExpr
+    from ncpolopt.substitutions import apply_substitutions
+
+    resolve = resolver if resolver is not None else _moment_resolver(problem)
+    word_matrix = data["word_matrix"]
+    substitutions = data["substitutions"]
+    j, w_op = data["j"], data["w"]
+
+    def push(
+        resolved: tuple[int, int] | float,
+        coeff: float,
+        terms: list[object],
+        constant: list[float],
+    ) -> None:
+        """Append ``coeff * moment(resolved)`` to the relation in progress."""
+        if abs(coeff) < 1e-12:
+            return
+        if isinstance(resolved, tuple):
+            terms.append(MomentEntry(0, resolved[0], resolved[1], float(coeff)))
+        else:
+            constant[0] += coeff * resolved
+
+    equalities: list[object] = []
+    for gi, (g, trace_fn) in enumerate(((j, partial_trace_b2), (w_op, partial_trace_a0b2))):
+        # Group the grid entries by their resolved SDP target: the variable
+        # position for free moments, the canonical monomial for pinned or
+        # vanishing constants (distinct pinned moments may share a VALUE
+        # while carrying different functionals, so they must not be
+        # merged).
+        groups: dict[object, dict[str, Any]] = {}
+        basis: list[np.ndarray] | None = None
+        for u in row_words:
+            mu_dag = word_matrix(u).T.conj()
+            for v in col_words:
+                g_mat = trace_fn(word_matrix(v) @ mu_dag)
+                if basis is None:
+                    basis = _hermitian_basis(g_mat.shape[0])
+                fvec = np.array([np.trace(g_mat @ b).real for b in basis])
+                monomial = apply_substitutions(u.adjoint() * g * v, substitutions)
+                resolved = resolve(monomial)
+                if resolved is None:
+                    continue
+                key = resolved if isinstance(resolved, tuple) else ("const", monomial)
+                stored = groups.get(key)
+                if stored is None:
+                    groups[key] = {"f": fvec, "resolved": resolved}
+                elif np.max(np.abs(stored["f"] - fvec)) > 1e-7:
+                    raise RuntimeError(
+                        f"functionally inconsistent moments tied to one variable "
+                        f"(g index {gi}, u={u}, v={v}): {stored['f']} vs {fvec}"
+                    )
+        # Greedy pivots: every non-pivot group gets the relation
+        # m_group = sum_a A_a m_pivot_a, exact in exact arithmetic.
+        pivot_keys: list[object] = []
+        pivot_fvecs: list[np.ndarray] = []
+        relations: list[tuple[object, np.ndarray]] = []
+        for key, group in sorted(groups.items(), key=lambda item: str(item[0])):
+            fvec = group["f"]
+            if pivot_fvecs:
+                stacked = np.array(pivot_fvecs).T
+                coeffs = np.linalg.lstsq(stacked, fvec, rcond=None)[0]
+                if np.max(np.abs(stacked @ coeffs - fvec)) < 1e-8:
+                    relations.append((key, coeffs))
+                    continue
+            pivot_keys.append(key)
+            pivot_fvecs.append(fvec)
+        for key, coeffs in relations:
+            terms: list[object] = []
+            constant = [0.0]
+            push(groups[key]["resolved"], 1.0, terms, constant)
+            # The coefficients align with the pivots chosen so far; pivots
+            # added later do not participate in this relation.
+            for coeff, pivot_key in zip(coeffs, pivot_keys[: len(coeffs)], strict=True):
+                push(groups[pivot_key]["resolved"], -float(coeff), terms, constant)
+            if not terms:
+                # Fully constant relation: a consistency check.
+                if abs(constant[0]) > 1e-8:
+                    raise RuntimeError(
+                        f"inconsistent constant linearity relation (g index {gi}): "
+                        f"{constant[0]}"
+                    )
+                continue
+            if abs(constant[0]) > 0:
+                terms.append(MomentEntry(coefficient=float(constant[0])))
+            equalities.append(MomentExpr(tuple(terms)))
     return equalities
 
 
@@ -928,15 +1238,15 @@ def _completeness_equalities(
     data: dict[Any, Any],
     localizing_basis: list[object],
     n_outputs: int,
+    resolver: Callable[[object], tuple[int, int] | float | None] | None = None,
 ) -> list[object]:
     """Linear moment equalities lifting the generator completeness
     relations into the inserted (J/W) blocks.
 
     The input projectors satisfy ``rho_0 + rho_1 = I`` (likewise
     ``sigma_0 + sigma_1 = I``), and the four-output Bell measurement
-    satisfies ``sum_alpha v_alpha = I``. At the matrix-model level these
-    are linear relations, so for every word pair ``(u, w)`` and inserted
-    operator ``g`` in ``{J, W}`` the moments obey
+    satisfies ``sum_alpha v_alpha = I``, so for every word pair ``(u, w)``
+    and inserted operator ``g`` in ``{J, W}`` the moments obey
 
     ``<u^dagger g rho_0 w> + <u^dagger g rho_1 w> = <u^dagger g w>``
 
@@ -948,6 +1258,8 @@ def _completeness_equalities(
         data: The factored-algebra data of :func:`_factored_data`.
         localizing_basis: The column words of the localizing blocks.
         n_outputs: The number of measurement outputs (1 or 4).
+        resolver: The block-0 resolver of :func:`_moment_resolver`; built
+            from ``problem`` when not given.
 
     Returns:
         The moment-equality list.
@@ -960,7 +1272,9 @@ def _completeness_equalities(
     ]
     if n_outputs == 4:
         relations.append([(1.0, v) for v in data["vs"]] + [(-1.0, None)])
-    return _linear_span_equalities(problem, data, localizing_basis, relations, "completeness")
+    return _linear_span_equalities(
+        problem, data, localizing_basis, relations, "completeness", resolver=resolver
+    )
 
 
 def _pauli_word_coefficients() -> dict[tuple[int, int], np.ndarray]:
@@ -1052,6 +1366,7 @@ def _pauli_equalities(
     data: dict[Any, Any],
     localizing_basis: list[object],
     specs: list[list[tuple[float, object]]],
+    resolver: Callable[[object], tuple[int, int] | float | None] | None = None,
 ) -> list[object]:
     """Linear moment equalities lifting the Pauli-decomposition
     anticommutator relations into the inserted (J/W) blocks.
@@ -1062,11 +1377,15 @@ def _pauli_equalities(
         data: The factored-algebra data of :func:`_factored_data`.
         localizing_basis: The column words of the localizing blocks.
         specs: The relation specs of :func:`_pauli_relation_specs`.
+        resolver: The block-0 resolver of :func:`_moment_resolver`; built
+            from ``problem`` when not given.
 
     Returns:
         The moment-equality list.
     """
-    return _linear_span_equalities(problem, data, localizing_basis, specs, "pauli")
+    return _linear_span_equalities(
+        problem, data, localizing_basis, specs, "pauli", resolver=resolver
+    )
 
 
 def _assemble_npa_tau_problem(
@@ -1082,7 +1401,7 @@ def _assemble_npa_tau_problem(
         data: The factored-algebra data of :func:`_factored_data`.
         moments: The moment substitutions of :func:`_factored_moments`.
         momentequalities: The functional-class moment-equalities.
-        extras: The extramonomials (the degree-3 words ``g U_{x,y}``).
+        extras: The extramonomials.
         localizing_basis: The localizing basis of all three inequalities.
 
     Returns:
@@ -1109,6 +1428,8 @@ def _npa_tau_problem(
     p: float,
     class_relations: bool = True,
     n_outputs: int = 1,
+    probes: bool = True,
+    families: tuple[str, ...] = ("linearity",),
 ) -> Problem:
     """Build the factored NPA re-expression of eq. (14).
 
@@ -1118,18 +1439,19 @@ def _npa_tau_problem(
     ``<rho_x sigma_y J v_alpha> = p(alpha|x,y)/(8d)`` (eq. (10) with
     ``U_{x,y} = rho_x sigma_y``), and the inequalities ``J >= 0, W >= 0,
     W - J >= 0`` produce localizing matrices over the
-    ``{1, rho, sigma, v} U {U_{x,y}}`` basis (26 words for one output,
-    29 for four). The objective is ``<W>``, which equals
-    ``Gamma^{(Z)}_{I,I}/8`` for ``d = 2``.
+    ``{1, rho, sigma, v} U {U_{x,y}} U {probe}`` basis. The objective is
+    ``<W>``, which equals ``Gamma^{(Z)}_{I,I}/8`` for ``d = 2``.
 
     Args:
         p: The channel parameter.
         class_relations: Add the moment-equalities that encode the
             functional class structure of eq. (12)/(13) of the J- and
-            W-localizing blocks as moment-matrix equalities, plus the
-            completeness moment-equalities (``rho_0 + rho_1 = I`` etc.).
-            Without them the objective degenerates.
+            W-localizing blocks. Without them the objective degenerates.
         n_outputs: The number of measurement outputs (1 or 4).
+        probes: Add the probe words ``rho_x sigma_y v_0`` to the
+            localizing basis (see :func:`_factored_classes`).
+        families: The moment-equality families (see
+            :func:`_factored_classes`).
 
     Returns:
         The built ``ncpolopt.Problem``.
@@ -1140,7 +1462,9 @@ def _npa_tau_problem(
     extras: list[object] | None = None
     localizing_basis: list[object] | None = None
     if class_relations:
-        momentequalities, extras, localizing_basis = _factored_classes(n_outputs)
+        momentequalities, extras, localizing_basis = _factored_classes(
+            n_outputs, probes=probes, families=families
+        )
     return _assemble_npa_tau_problem(data, moments, momentequalities, extras, localizing_basis)
 
 
@@ -1149,6 +1473,9 @@ def npa_tau_relaxation_value(
     solver: str = "clarabel",
     class_relations: bool = True,
     n_outputs: int = 1,
+    probes: bool = True,
+    families: tuple[str, ...] = ("linearity",),
+    solver_options: dict[str, Any] | None = None,
 ) -> float:
     """Solve the factored NPA re-expression of eq. (14) at level 2.
 
@@ -1156,17 +1483,20 @@ def npa_tau_relaxation_value(
         p: The channel parameter.
         solver: The solver kind to use. Default and recommended is the
             package's direct sparse CLARABEL backend: the dense cvxpy
-            canonicalization of the 176-word moment matrix (239 for four
-            outputs) does not fit in memory, so ``"cvxpy"`` only works for
-            small historical variants. The MOSEK backend
-            (``solver="mosek"``) is faster when a license is available;
-            before the completeness moment-equalities were added, the
-            MOSEK interior point stalled (``unknown``) on this problem --
-            with them it is well-posed and solves normally.
-        class_relations: Add the functional class relations and the
-            completeness/Pauli moment-equalities (default True; disable
-            to expose the degenerate form).
+            canonicalization of the moment matrix does not fit in
+            memory. The MOSEK backend (``solver="mosek"``) is faster
+            when a license is available.
+        class_relations: Add the moment-equality families (default True;
+            disable to expose the degenerate form).
         n_outputs: The number of measurement outputs (1 or 4).
+        probes: Add the probe words ``rho_x sigma_y v_0`` (the
+            degree-2 monomials ``U_{x,y} V_0`` of the document's
+            operator set) to the localizing basis.
+        families: The moment-equality families (see
+            :func:`_factored_classes`).
+        solver_options: Backend knobs forwarded through
+            ``SolverSettings.solver_options`` (e.g. CLARABEL's
+            ``presolve_enable``).
 
     Returns:
         The optimal value (the certified fidelity lower bound).
@@ -1176,10 +1506,12 @@ def npa_tau_relaxation_value(
             sparse backend.
         RuntimeError: If the solver status is not "optimal".
     """
-    problem = _npa_tau_problem(p, class_relations, n_outputs)
+    from ncpolopt.solvers.base import SolverSettings
+
+    problem = _npa_tau_problem(p, class_relations, n_outputs, probes, families)
     if n_outputs > 1:
-        # "cvxpy"/"CLARABEL" keep their historical meaning: the direct
-        # sparse CLARABEL backend, not the dense cvxpy conversion.
+        # NOTE: "cvxpy"/"CLARABEL" are routed to the direct sparse CLARABEL
+        # backend, not the dense cvxpy conversion.
         direct = {"cvxpy": "clarabel", "CLARABEL": "clarabel", "clarabel": "clarabel",
                   "mosek": "mosek", "MOSEK": "mosek"}
         if solver not in direct:
@@ -1188,7 +1520,8 @@ def npa_tau_relaxation_value(
                 f"('clarabel' or 'mosek'), got {solver!r}."
             )
         solver = direct[solver]
-    solution = problem.solve(level=2, solver=solver)
+    settings = SolverSettings(solver_options=dict(solver_options or {}))
+    solution = problem.solve(level=2, solver=solver, settings=settings)
     if solution.status != "optimal":
         raise RuntimeError(f"NPA-tau relaxation failed with status {solution.status!r}.")
     return float(solution.primal)
