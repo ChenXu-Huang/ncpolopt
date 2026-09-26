@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import Any
+
 import pytest
 
 from ncpolopt.solvers.base import SolverKind
@@ -18,7 +21,9 @@ def _licensed_mosek() -> bool:
     try:
         import mosek
 
-        env = mosek.Env()
+        # NOTE: the MOSEK binding is a compiled extension whose environment
+        # methods cannot be resolved statically.
+        env: Any = mosek.Env()
         if hasattr(env, "checkoutlicense"):
             # MOSEK 10+: check out the base feature explicitly; the license
             # is otherwise only checked at optimize() time.
@@ -52,7 +57,7 @@ def solver_kind(request: pytest.FixtureRequest) -> SolverKind:
 
 
 @pytest.fixture(autouse=True)
-def clear_sympy_cache() -> None:
+def clear_sympy_cache() -> Iterator[None]:
     """Reset SymPy's expression cache after every test.
 
     The old unittest suite cleared the cache in each ``tearDown`` because

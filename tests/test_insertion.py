@@ -8,12 +8,18 @@ explicit 2x2 matrices.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import TypedDict
+
 import numpy as np
 import pytest
-from sympy import S
+from sympy import Basic, Expr, S
+from sympy.physics.quantum import Operator
 
 import ncpolopt as nc
 from ncpolopt.hierarchies import class_moment_equalities, trace_moment_pins
+from ncpolopt.moment import MomentExpr
+from ncpolopt.solvers.base import SolverKind
 from ncpolopt.substitutions import apply_substitutions
 
 P0 = np.array([[1.0, 0.0], [0.0, 0.0]], dtype=complex)
@@ -22,15 +28,35 @@ P1 = np.array([[0.5, 0.5], [0.5, 0.5]], dtype=complex)
 _TOL = 1e-9
 
 
-def _model() -> dict[object, object]:
+class _Model(TypedDict):
+    """The toy algebra shared by the insertion tests.
+
+    Attributes:
+        p0: The first projector.
+        p1: The second projector.
+        g: The inserted hermitian operator.
+        substitutions: The word substitution rules of the toy algebra.
+        basis: The basis words of the model.
+        word_matrix: Maps a basis word to its explicit 2x2 matrix.
+    """
+
+    p0: Operator
+    p1: Operator
+    g: Operator
+    substitutions: dict[Basic, Basic]
+    basis: list[Expr]
+    word_matrix: Callable[[Basic], np.ndarray]
+
+
+def _model() -> _Model:
     """The toy algebra: operators, rules, basis and word matrices."""
     p0, p1 = nc.generate_operators("p", 2, hermitian=True)
     (g,) = nc.generate_operators("g", 1, hermitian=True)
-    substitutions = {p0**2: p0, p1**2: p1}
-    basis = [S.One, p0, p1]
-    mats = {p0: P0, p1: P1}
+    substitutions: dict[Basic, Basic] = {p0**2: p0, p1**2: p1}
+    basis: list[Expr] = [S.One, p0, p1]
+    mats: dict[Basic, np.ndarray] = {p0: P0, p1: P1}
 
-    def word_matrix(word: object) -> np.ndarray:
+    def word_matrix(word: Basic) -> np.ndarray:
         """The explicit 2x2 matrix of a basis word."""
         if word == 1:
             return np.eye(2, dtype=complex)
@@ -46,7 +72,7 @@ def _model() -> dict[object, object]:
     }
 
 
-def _problem(model: dict[object, object], momentequalities: list[object]) -> nc.Problem:
+def _problem(model: _Model, momentequalities: list[MomentExpr]) -> nc.Problem:
     """The inserted-operator problem over the toy algebra."""
     p0, p1, g = model["p0"], model["p1"], model["g"]
     pins = trace_moment_pins(
@@ -106,9 +132,9 @@ def test_trace_moment_pins_force_real() -> None:
     # |+i><+i| makes Tr(P0 P1 Pi) genuinely complex.
     p_i = np.array([[0.5, -0.5j], [0.5j, 0.5]], dtype=complex)
     substitutions = {p0**2: p0, p1**2: p1, q**2: q}
-    mats = {p0: P0, p1: P1, q: p_i}
+    mats: dict[Basic, np.ndarray] = {p0: P0, p1: P1, q: p_i}
 
-    def word_matrix(word: object) -> np.ndarray:
+    def word_matrix(word: Basic) -> np.ndarray:
         """The explicit 2x2 matrix of a basis word (products expanded)."""
         if word == 1:
             return np.eye(2, dtype=complex)
@@ -144,7 +170,7 @@ def test_trace_moment_pins_clash_raises() -> None:
         )
 
 
-def _class_of(monomial: object, model: dict[object, object]) -> np.ndarray:
+def _class_of(monomial: Basic, model: _Model) -> np.ndarray:
     """The functional G = v u^dagger of a monomial u^dagger g v."""
     g = model["g"]
     rules = model["substitutions"]
@@ -204,14 +230,20 @@ def test_class_moment_equalities_deterministic() -> None:
     model = _model()
     g = model["g"]
     problem = _problem(model, momentequalities=[])
-    kwargs = {
-        "inserted": [(g, lambda matrix: matrix)],
-        "row_words": model["basis"],
-        "col_words": model["basis"],
-        "word_matrix": model["word_matrix"],
-    }
-    first = class_moment_equalities(problem, 1, **kwargs)
-    second = class_moment_equalities(problem, 1, **kwargs)
+
+    def relations() -> list[MomentExpr]:
+        """Generate the class relations once from the model's arguments."""
+        return class_moment_equalities(
+            problem,
+            1,
+            inserted=[(g, lambda matrix: matrix)],
+            row_words=model["basis"],
+            col_words=model["basis"],
+            word_matrix=model["word_matrix"],
+        )
+
+    first = relations()
+    second = relations()
     assert [r.terms for r in first] == [r.terms for r in second]
 
 
@@ -246,7 +278,7 @@ def test_class_moment_equalities_missing_monomial() -> None:
         )
 
 
-def test_insertion_relaxation_solves(solver_kind: object) -> None:
+def test_insertion_relaxation_solves(solver_kind: SolverKind) -> None:
     """The generated problem builds and solves; class moments agree."""
     model = _model()
     g = model["g"]

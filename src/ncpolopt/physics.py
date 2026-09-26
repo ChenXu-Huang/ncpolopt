@@ -14,7 +14,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from sympy import S
+from sympy import Expr, S
+from sympy.physics.quantum import Operator
 from sympy.physics.quantum.dagger import Dagger
 
 from .expressions import flatten
@@ -196,7 +197,7 @@ def pauli_constraints(
     return substitutions
 
 
-def generate_measurements(party: list[int], label: str) -> list[list[Any]]:
+def generate_measurements(party: list[int], label: str) -> list[list[Operator]]:
     """Generate hermitian variables that behave like measurement operators.
 
     One list per measurement input, with one projector fewer than the number
@@ -261,7 +262,7 @@ def projective_measurement_constraints(
 
 def define_objective_with_I(
     I_matrix: Sequence[Sequence[float]], *args: Any
-) -> Any:
+) -> Expr | complex:
     """The minimization objective of a Bell inequality in Collins-Gisin form.
 
     The I matrix is expanded against the measurement operators (or a
@@ -428,7 +429,7 @@ class Probability:
             )
         self.substitutions = projective_measurement_constraints(self.parties)
 
-    def get_all_operators(self) -> list[Any]:
+    def get_all_operators(self) -> list[Operator]:
         """All operators across all parties and measurements.
 
         Returns:
@@ -438,8 +439,8 @@ class Probability:
         return flatten(self.parties)
 
     def _monomial_generator(
-        self, monomials: list[Any], label_indices: list[int]
-    ) -> list[Any]:
+        self, monomials: list[Expr], label_indices: list[int]
+    ) -> list[Expr]:
         """All products of operators of the parties at ``label_indices``."""
         if label_indices == []:
             return monomials
@@ -454,7 +455,7 @@ class Probability:
         ]
         return self._monomial_generator(result, label_indices[1:])
 
-    def get_extra_monomials(self, *args: Any) -> list[Any]:
+    def get_extra_monomials(self, *args: str | list[str]) -> list[Expr]:
         """The monomials over the parties named in ``args``.
 
         Args:
@@ -465,18 +466,30 @@ class Probability:
         """
         if len(args) == 0:
             return []
-        if isinstance(args[0], list):
-            args = args[0]
+        # NOTE: the single-list form replaces the variadic form, so the
+        # parameter itself cannot be rebound -- ``*args`` is a tuple and the
+        # list branch would not type-check against it.
+        entries: Sequence[str | list[str]] = (
+            args[0] if isinstance(args[0], list) else args
+        )
         extra_monomials = []
-        for s in args:
+        for s in entries:
             label_indices = [self.labels.index(party) for party in s]
             extra_monomials.extend(self._monomial_generator([], label_indices))
         return extra_monomials
 
     def _convert_marginal_index(
-        self, marginal: str | list[str | int]
+        self, marginal: Sequence[str | int]
     ) -> list[int]:
-        """Map a marginal specification onto party indices."""
+        """Map a marginal specification onto party indices.
+
+        Args:
+            marginal: A party label, a sequence of party labels, or already
+                resolved party indices.
+
+        Returns:
+            The party indices, sorted.
+        """
         if isinstance(marginal, str):
             return [self.labels.index(marginal)]
         return sorted(
@@ -488,7 +501,7 @@ class Probability:
         output_: list[int],
         input_: list[int],
         marginal: str | list[str | int] | None = None,
-    ) -> Any:
+    ) -> Expr:
         """The probability p(output|input) as a polynomial of projectors.
 
         For the CHSH scenario, ``P([1, 0], [0, 1])`` gives p(10|01) and
@@ -517,33 +530,36 @@ class Probability:
             raise ValueError("The number of inputs exceeds the number of parties!")
         if marginal is None and len(input_) < self.n_parties:
             raise ValueError("Marginal requested, but without defining which!")
+        # NOTE: the resolved indices go into a new name -- rebinding the
+        # ``marginal`` parameter would leave it typed as the wider
+        # ``str | list[str | int] | None`` union declared above.
         if marginal is None:
-            marginal = self._convert_marginal_index(self.labels)
+            party_indices = self._convert_marginal_index(self.labels)
         else:
-            marginal = self._convert_marginal_index(marginal)
-            if len(marginal) != len(input_):
+            party_indices = self._convert_marginal_index(marginal)
+            if len(party_indices) != len(input_):
                 raise ValueError(
                     "The number of parties in the marginal does not match "
                     "the number of inputs!"
                 )
         result = S.One
         for party, (proj, meas) in enumerate(zip(output_, input_, strict=True)):
-            if len(self.parties[marginal[party]]) < meas + 1:
+            if len(self.parties[party_indices[party]]) < meas + 1:
                 raise ValueError(
                     f"Invalid measurement index {meas} for party "
                     f"{self.labels[party]}"
                 )
-            if len(self.parties[marginal[party]][meas]) < proj:
+            if len(self.parties[party_indices[party]][meas]) < proj:
                 raise ValueError(
                     f"Invalid projection operator index {proj} for party "
                     f"{self.labels[party]}"
                 )
-            if len(self.parties[marginal[party]][meas]) == proj:
+            if len(self.parties[party_indices[party]][meas]) == proj:
                 # The last projector of the measurement is not part of the
                 # Collins-Gisin picture; it is the complement.
                 result *= S.One - sum(
-                    op for op in self.parties[marginal[party]][meas]
+                    op for op in self.parties[party_indices[party]][meas]
                 )
             else:
-                result *= self.parties[marginal[party]][meas][proj]
+                result *= self.parties[party_indices[party]][meas][proj]
         return result

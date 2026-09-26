@@ -27,6 +27,13 @@ Python 3.13+, uv build backend (`uv_build`), package metadata in
 sympy only) — solver bindings are optional extras (`cvxpy`, `mosek`,
 `cvxopt`, `chordal`) and must stay lazy.
 
+**All temporary content belongs in `temp/`.** Scratch scripts, throwaway
+reproductions, debug or profiler output, solver logs, generated data
+files, and intermediate artifacts go under the gitignored `temp/`
+directory (create it if missing) — never in the repository root, `src/`,
+`tests/`, or `docs/`. Only content meant to be committed is written
+outside `temp/`, at its final path and with its final name.
+
 ## Architecture invariants
 
 These are traps with hard-won fixes; do not regress them:

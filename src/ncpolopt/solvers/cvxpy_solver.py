@@ -14,7 +14,7 @@ backends handle those.
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -26,6 +26,9 @@ from .base import (
     SolverSettings,
     UnsupportedSdpError,
 )
+
+if TYPE_CHECKING:  # NOTE: cvxpy stays a lazy import (see AGENTS.md).
+    import cvxpy as cp
 from .registry import register
 
 #: cvxpy statuses mapped onto the package status vocabulary.
@@ -46,7 +49,7 @@ _COMPLEX_DTYPE = np.dtype(np.complex128)
 _DEFAULT_SOLVERS = ("CLARABEL", "SCS")
 
 
-def convert_to_cvxpy(problem: SdpProblem) -> Any:
+def convert_to_cvxpy(problem: SdpProblem) -> cp.Problem:
     """Convert a frozen SDP problem to a CVXPY problem.
 
     Each block becomes one constraint: a PSD constraint ``sum_ >> 0`` for
@@ -72,18 +75,16 @@ def convert_to_cvxpy(problem: SdpProblem) -> Any:
             "MOSEK or the external SDPA backend instead."
         )
     x = Variable(problem.n_vars)
-    constraints = []
+    # NOTE: a constant-only scalar block contributes the Python bool
+    # ``0.0 >= 0`` (the empty-scalar artifact documented in ARCHITECTURE.md),
+    # so the list is not purely ``cvxpy.Constraint``.
+    constraints: list[Any] = []
     for block in problem.blocks:
         size = block.size
-        mats: list[np.ndarray] | list[float] = (
-            [np.zeros((size, size)) for _ in range(problem.n_vars + 1)]
-            if size > 1
-            else [0.0] * (problem.n_vars + 1)
-        )
-        for k, position, value in zip(
-            block.coo.row, block.coo.col, block.coo.data, strict=True
-        ):
-            if size > 1:
+        entries = zip(block.coo.row, block.coo.col, block.coo.data, strict=True)
+        if size > 1:
+            mats = [np.zeros((size, size)) for _ in range(problem.n_vars + 1)]
+            for k, position, value in entries:
                 row, column = divmod(int(position), size)
                 # Construction stores the upper triangle only; mirror the
                 # entry so the constraint matrix is symmetric. CVXPY would
@@ -92,22 +93,30 @@ def convert_to_cvxpy(problem: SdpProblem) -> Any:
                 mats[int(k)][row, column] += value
                 if row != column:
                     mats[int(k)][column, row] += value
-            else:
-                mats[int(k)] += value
-        if size > 1:
-            expression = mats[0]
-            for k in range(1, problem.n_vars + 1):
-                if np.count_nonzero(mats[k]) > 0:
-                    expression = expression + mats[k] * x[k - 1]
+            terms = [
+                mats[k] * x[k - 1]
+                for k in range(1, problem.n_vars + 1)
+                if np.count_nonzero(mats[k]) > 0
+            ]
+            # NOTE: with no variable terms the constant stays the raw NumPy
+            # matrix (whose ``>>`` is a NumPy operator), so the accumulator
+            # cannot be typed as a CVXPY expression.
+            expression: Any = mats[0] + sum(terms)
             constraints.append(expression >> 0)
         else:
-            expression = mats[0]
-            for k in range(1, problem.n_vars + 1):
-                if mats[k] != 0:
-                    expression = expression + mats[k] * x[k - 1]
-            constraints.append(expression >= 0)
+            scalars = [0.0] * (problem.n_vars + 1)
+            for k, _, value in entries:
+                scalars[int(k)] += value
+            scalar_terms = [
+                scalars[k] * x[k - 1]
+                for k in range(1, problem.n_vars + 1)
+                if scalars[k] != 0
+            ]
+            constraints.append(scalars[0] + sum(scalar_terms) >= 0)
     objective = sum(
-        coefficient * x[k] for k, coefficient in enumerate(problem.obj) if coefficient != 0
+        coefficient * x[k]
+        for k, coefficient in enumerate(problem.obj)
+        if coefficient != 0
     )
     return Problem(Minimize(objective), constraints)
 
@@ -158,9 +167,19 @@ def solve_with_cvxpy(
         )
     x = np.asarray(x)
     x_mat = block_matrices(problem, x)
-    y_mat = tuple(
-        constraint.dual_value for constraint in cvxpy_problem.constraints
-    )
+    # CVXPY reports a bare float for scalar (1x1) constraints and None for a
+    # constraint it did not solve; both are normalised onto the block shape so
+    # the dual matrices stay indexable and the block pairing is preserved.
+    dual_blocks: list[np.ndarray] = []
+    for block, constraint in zip(
+        problem.blocks, cvxpy_problem.constraints, strict=True
+    ):
+        dual = constraint.dual_value
+        if dual is None:
+            dual_blocks.append(np.zeros((block.size, block.size)))
+        else:
+            dual_blocks.append(np.atleast_2d(np.asarray(dual, dtype=float)))
+    y_mat = tuple(dual_blocks)
     return SolverResult(
         status=status,
         primal=float(np.real(np.dot(problem.obj, x))) + problem.constant_term,

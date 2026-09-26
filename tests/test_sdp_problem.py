@@ -114,11 +114,11 @@ def test_basis_transform_is_frozen() -> None:
     """BasisTransform is immutable."""
     transform = BasisTransform(np.eye(2), np.array([1.0, 0.0, 0.0]))
     with pytest.raises(AttributeError):
-        transform.basis = np.zeros((2, 2))
+        transform.basis = np.zeros((2, 2))  # type: ignore[misc]
 
 
 def test_sparse_block_is_frozen() -> None:
     """SparseBlock fields are read-only."""
     block = SparseBlock.__new__(SparseBlock)
     with pytest.raises(AttributeError):
-        block.size = 3
+        block.size = 3  # type: ignore[misc]

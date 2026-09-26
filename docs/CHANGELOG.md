@@ -21,9 +21,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   entrywise in the verbatim level-2 construction (restricted 46-word
   basis), anticommutators `{rho_x, rho_z} = sum_t a_t rho_t` as
   moment-equalities in the factored construction (72 degree-3
-  extramonomials). With these relations the certified bound sits on the
-  analytic line `(2p+1)/6` at every measured point, for one and four
-  outputs alike.
+  extramonomials). With these relations alone the certified bound still
+  sat on the analytic line `(2p+1)/6`; the probe words below are what
+  lift the level-2 forms onto `p` itself.
+- `operator_relaxation_value` in the quantum-memory example — eq. (14)
+  as written, with the unknown Hermitian operators `J` (4x4) and `Z`
+  (2x2) as the SDP variables instead of one variable per functional
+  class. The word set is the document's `S = {I, U, V}` at level 1; level
+  2 adds the degree-2 monomials `U_{x,y} V_alpha`, and the certified value
+  then attains the exact Choi fidelity `p` for one and four outputs alike
+  (level 1 stays on the `(2p+1)/6` wall). All Hermitian blocks are
+  realified by hand, so the SDP is real.
+- Quantum-memory example: probe words `rho_x sigma_y v_0` (the factored
+  image of the degree-2 monomials `U_{x,y} V_0`) and their `g`-products
+  join the extramonomials, extending the localizing basis to 42/45 words
+  and the moment matrix to 184/247 words. With them the factored NPA-tau
+  level-2 value reaches `p` (0.499999 at p = 0.5) instead of stalling on
+  the wall.
+- `probes`, `families` and `solver_options` parameters of
+  `npa_tau_relaxation_value`: the relation set is now selectable
+  (`"linearity"`, `"classes"`, `"completeness"`, `"pauli"`), the new
+  default being the functional-linearity family
+  (`_functional_linearity_equalities`), and backend knobs are forwarded
+  through `SolverSettings.solver_options`.
+- `py.typed` marker and a `[tool.pyright]` configuration
+  (`typeCheckingMode = "standard"` over `src/ncpolopt`, `tests` and
+  `examples`, with `examples` on the extra path), plus a repo-wide
+  `.editorconfig` pinning LF, UTF-8 and 4-space indentation.
 
 ### Changed
 
@@ -33,14 +57,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   orthogonal-input zero words) reach into the free classes instead of
   weakening the relaxation.
 - `npa_tau_relaxation_value` defaults to `solver="clarabel"` (the dense
-  cvxpy canonicalization of the 176/239-word moment matrix no longer
+  cvxpy canonicalization of the 184/247-word moment matrix no longer
   fits in memory); the MOSEK backend now solves the 4-output variant
   without the trace-preserving pin — the completeness moment-equalities
   cure the ill-posedness that stalled its interior point.
+- Quantum-memory example: the factored `rho_x` matrices now carry the
+  A0-side transpose of eq. (10) — `rho_3 = |+i><+i|` is not symmetric,
+  and without it the correlation pins target the non-PSD partial
+  transpose `J_M^{T_A0}` instead of `J_M`.
 - Quantum-memory example: the certified level-1/level-2 bounds moved from
   the degenerate floor `p/(8d)` (unpinned) / TP-pinned values onto the
-  analytic line `(2p+1)/6` (exact at p = 0.25); README tables and test
-  pins re-measured accordingly.
+  analytic line `(2p+1)/6`, and then onto the exact `p` for the operator
+  and factored level-2 forms once the probe words and the
+  functional-linearity family are in place; the verbatim class form still
+  sits on the wall, and the README now explains which of the three
+  ingredients (probes, the A0-side transpose, cross-class linearity) does
+  the work. README tables and test pins re-measured accordingly.
+- Type annotations hardened across the package for Pyright's standard
+  mode: `facvar`/coefficient vectors are typed `complex` end to end
+  (`SdpBuilder`, `NpaRelaxation`, `Solution`), the hierarchy modules
+  import `Problem` only under `TYPE_CHECKING` (avoiding the lazy-import
+  cycle), `SparseBlock.constant_matrix` resolves SciPy's optional
+  `shape` through a cast, and the example's cached factored data and the
+  insertion-test model became `TypedDict`s. Solver-side: the SDPA parser
+  returns the new `SdpaOutcome` (optional objective values) instead of
+  `SolverResult`, the compiled CLARABEL extension is reached through an
+  untyped module alias, and CVXPY is imported under `TYPE_CHECKING` so
+  the lazy-import rule is unchanged.
+- Tests and examples follow the typed interfaces: the memory-verification
+  test imports the shared module as `quantum_memory.common` with
+  `examples` on `sys.path`, and `SolverKind`/`SdpProblem` replace
+  `object` in the test signatures.
 
 ### Removed
 
@@ -49,6 +96,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   relations in place the trace-preserving pin is redundant (pinned and
   unpinned bounds coincide), and the MOSEK `tp_pin=True` requirement is
   gone with it.
+
+### Fixed
+
+- `MomentEntry.__rsub__` put the whole `-entry` sub-expression into the
+  term tuple, so `constant - entry` produced a nested `MomentExpr`
+  instead of flat terms (regression test
+  `test_reflected_subtraction_stays_flat`).
+- CVXPY backend: a constraint's dual value — a bare float for scalar
+  blocks, `None` for constraints the solver did not reach — is normalised
+  to a block-shaped array, so the dual matrices stay indexable and paired
+  with their blocks.
+- PICOS backend: a `None` solver status maps to `"unknown"` instead of
+  leaking `None` into the status field.
 
 ## [0.2.0] — 2026-08-31
 

@@ -130,7 +130,9 @@ def ncdegree(polynomial: Any) -> int:
         return degree
     polynomial = polynomial.expand()
     for monomial in polynomial.as_coefficients_dict():
-        subdegree = 0
+        # NOTE: SymPy annotates ``Pow.exp`` as ``Expr`` while the runtime
+        # value is an ``Integer``/``Rational``, so ``int`` cannot hold it.
+        subdegree: Any = 0
         for variable in monomial.as_coeff_mul()[1]:
             if isinstance(variable, Pow):
                 subdegree += variable.exp

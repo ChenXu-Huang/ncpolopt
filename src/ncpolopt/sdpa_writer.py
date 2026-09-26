@@ -14,13 +14,36 @@ The parsing side reconstructs the per-block matrices from the row syntax
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 import numpy as np
 
 from .sdp_problem import SdpProblem
-from .solvers.base import SolverResult
 
 _COMPLEX_DTYPE = np.dtype(np.complex128)
+
+
+@dataclass(frozen=True, slots=True)
+class SdpaOutcome:
+    """The contents of a parsed SDPA output file.
+
+    Unlike :class:`~ncpolopt.solvers.base.SolverResult`, the objective values
+    stay optional: a truncated file may carry none, and it is up to the
+    SDPA backend to substitute its own convention.
+
+    Attributes:
+        status: The mapped status string.
+        primal: The primal objective value, or None when the file has none.
+        dual: The dual objective value, or None when the file has none.
+        x_mat: The primal block matrices.
+        y_mat: The dual block matrices.
+    """
+
+    status: str
+    primal: float | None
+    dual: float | None
+    x_mat: tuple[np.ndarray, ...] = ()
+    y_mat: tuple[np.ndarray, ...] = ()
 
 
 def parse_solution_matrix(iterator: Iterable[str]) -> list[np.ndarray]:
@@ -85,7 +108,7 @@ def _parse_phase(line: str) -> str:
     return "unknown"
 
 
-def read_sdpa_out(filename: str) -> SolverResult:
+def read_sdpa_out(filename: str) -> SdpaOutcome:
     """Parse an SDPA output file into a solver result.
 
     The objective values are reported as stored; the caller adds the
@@ -117,7 +140,7 @@ def read_sdpa_out(filename: str) -> SolverResult:
                 y_mat = tuple(parse_solution_matrix(file_))
     if None in (primal, dual, status_string, x_mat, y_mat):
         status_string = "invalid"
-    return SolverResult(
+    return SdpaOutcome(
         status=status_string or "invalid",
         primal=primal,
         dual=dual,

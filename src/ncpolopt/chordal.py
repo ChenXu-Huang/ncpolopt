@@ -87,8 +87,8 @@ def _fill_pattern(
     # the RNG state without ever changing the result.
     value = 1.0
     if obj is not None:
-        for support in get_support(variables, obj):
-            nonzeros = np.nonzero(support)[0]
+        for monomial_support in get_support(variables, obj):
+            nonzeros = np.nonzero(monomial_support)[0]
             for i in nonzeros:
                 for j in nonzeros:
                     rmat[i, j] = value
@@ -144,8 +144,9 @@ def _clique_set_from_chompack(pattern: np.ndarray) -> np.ndarray:
     Raises:
         ImportError: If the optional chompack/cvxopt pair is missing.
     """
+    # NOTE: ``cvxopt.amd`` is a compiled submodule Pyright cannot inspect.
     import chompack as cp
-    from cvxopt import amd, spmatrix
+    from cvxopt import amd, spmatrix  # pyright: ignore[reportAttributeAccessIssue]
 
     n_dim = len(pattern)
     rows, cols = np.nonzero(pattern)

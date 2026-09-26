@@ -49,7 +49,7 @@ class MomentEntry:
 
     def __rsub__(self, other: object) -> MomentExpr:
         if isinstance(other, (int, float, complex)):
-            return MomentExpr((MomentEntry(coefficient=other), -self))
+            return MomentExpr((MomentEntry(coefficient=other),)) - self
         return NotImplemented
 
     def __mul__(self, other: object) -> MomentExpr:

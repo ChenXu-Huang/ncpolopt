@@ -23,10 +23,24 @@ from ncpolopt.expressions import flatten
 from ncpolopt.hierarchies import MoroderHierarchy, RdmHierarchy, SteeringHierarchy
 from ncpolopt.physics import Probability, define_objective_with_I
 from ncpolopt.problem import Problem
+from ncpolopt.sdp_problem import SdpProblem
 from ncpolopt.variables import generate_operators
 
 
-def _moment_matrix_data(sdp: object) -> tuple[np.ndarray, list[np.ndarray]]:
+def _as_float(value: object) -> float:
+    """Coerce a value reported by a solver object to a Python float.
+
+    Args:
+        value: The scalar CVXPY reported (a float, NumPy scalar or SymPy
+            number, depending on the constraint kind).
+
+    Returns:
+        The value as a Python float.
+    """
+    return float(np.asarray(value, dtype=float).item())
+
+
+def _moment_matrix_data(sdp: SdpProblem) -> tuple[np.ndarray, list[np.ndarray]]:
     """Reconstruct the moment matrix coefficients of the first block.
 
     The frozen SDP stores the block in COO form with the SDP variable
@@ -130,7 +144,7 @@ def test_moroder_violation() -> None:
     prob = cp.Problem(cp.Minimize(sdp.obj @ x + sdp.constant_term), constraints)
     prob.solve(solver=cp.CLARABEL)
     assert prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE)
-    assert abs(float(prob.value) - (-0.7284201767)) < 1e-3
+    assert abs(_as_float(prob.value) - (-0.7284201767)) < 1e-3
 
 
 def test_moroder_picos_witness() -> None:
@@ -163,7 +177,10 @@ def test_moroder_picos_witness() -> None:
     Z = pic.SymmetricVariable("Z", size)
     P_problem = model.problem
     P_problem.add_constraint(Y.partial_transpose(1, [3, 3]) >> 0)
-    P_problem.add_constraint(Z.partial_transpose(1, [3, 3]) >> 0)
+    # NOTE: PICOS accepts a list of subsystem dimensions although its
+    # annotation declares an int.
+    transposed_z = Z.partial_transpose(1, [3, 3])  # pyright: ignore[reportArgumentType]
+    P_problem.add_constraint(transposed_z >> 0)
     P_problem.add_constraint(X - Y + Z == 0)
     P_problem.add_constraint(Z[0, 0] == 1)
     P_problem.options.solver = "cvxopt"

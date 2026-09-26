@@ -18,11 +18,11 @@ from ncpolopt.physics import (
     get_neighbors,
 )
 from ncpolopt.problem import Problem
-from ncpolopt.solvers.base import UnsupportedSdpError
+from ncpolopt.solvers.base import SolverKind, UnsupportedSdpError
 from ncpolopt.variables import generate_operators
 
 
-def test_harmonic_oscillator(solver_kind: object) -> None:
+def test_harmonic_oscillator(solver_kind: SolverKind) -> None:
     N = 3
     a = generate_operators("a", N)
     substitutions = bosonic_constraints(a)
@@ -32,7 +32,7 @@ def test_harmonic_oscillator(solver_kind: object) -> None:
     assert abs(solution.primal) < 10e-5
 
 
-def test_magnetization(solver_kind: object) -> None:
+def test_magnetization(solver_kind: SolverKind) -> None:
     length, n, h, U, t = 2, 0.8, 3.8, -6, 1
     fu = generate_operators("fu", length)
     fd = generate_operators("fd", length)

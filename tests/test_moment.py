@@ -39,3 +39,13 @@ def test_subtraction_from_constant() -> None:
     expr = MomentEntry(0, 0, 0) - 1.0
     assert expr.constant() == 0.0
     assert isinstance(expr, MomentExpr)
+
+
+def test_reflected_subtraction_stays_flat() -> None:
+    """``2 - entry`` keeps flat entries instead of nesting a MomentExpr."""
+    expr = 2 - MomentEntry(1, 2, 3, coefficient=1.0)
+    assert expr.terms == (
+        MomentEntry(0, 0, 0, coefficient=2.0),
+        MomentEntry(1, 2, 3, coefficient=-1.0),
+    )
+    assert expr.constant() == 2.0

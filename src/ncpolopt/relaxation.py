@@ -16,7 +16,7 @@ arithmetic) and the value model (MomentExpr instead of the string DSL).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from sympy import S
@@ -44,6 +44,9 @@ from .substitutions import (
     simplify_polynomial,
 )
 from .variables import find_variable_set
+
+if TYPE_CHECKING:  # NOTE: problem.py imports this module lazily.
+    from .problem import Problem
 
 logger = module_logger(__name__)
 
@@ -118,11 +121,14 @@ class Relaxation(ABC):
         warnings: Non-fatal construction warnings.
     """
 
-    def __init__(self, problem: Any, level: int) -> None:
-        self.problem = problem
+    def __init__(self, problem: Problem, level: int) -> None:
+        self.problem: Problem = problem
         self.level = level
-        self.sdp: SdpProblem | None = None
         self.solution: Solution | None = None
+        # NOTE: declared without ``None`` -- every concrete hierarchy builds
+        # in its constructor, so the frozen SDP exists by the time the
+        # object is usable (``_build`` assigns it).
+        self.sdp: SdpProblem
         self.moment_block_indices: tuple[int, ...] = (0,)
         self.warnings: list[str] = []
 
@@ -178,7 +184,7 @@ class NpaRelaxation(Relaxation):
 
     def __init__(
         self,
-        problem: Any,
+        problem: Problem,
         level: int,
         *,
         removeequalities: bool = False,
@@ -208,7 +214,10 @@ class NpaRelaxation(Relaxation):
         self._moment_substitutions: dict[Any, Any] = {}
         self._pure_substitution_rules = True
         self._n_parameter_blocks = 0
-        self._builder: SdpBuilder | None = None
+        # NOTE: declared without ``None`` -- ``_build`` below always assigns a
+        # builder before any other method can run, so the attribute is never
+        # missing once construction returns.
+        self._builder: SdpBuilder
         self._position_to_var: dict[tuple[int, int, int], int] = {}
         self._build(removeequalities)
 
@@ -426,7 +435,7 @@ class NpaRelaxation(Relaxation):
 
     def _process_monomial(
         self, monomial: Any, block: int, i: int, j: int
-    ) -> list[tuple[int, float]]:
+    ) -> list[tuple[int, complex]]:
         """Resolve one monomial into (SDP variable, coefficient) entries.
 
         Moment substitutions apply first; a known monomial maps to its
@@ -446,7 +455,7 @@ class NpaRelaxation(Relaxation):
         processed_monomial, coeff = separate_scalar_factor(monomial)
         substitute = self._moment_substitutions.get(processed_monomial)
         if substitute is not None:
-            result: list[tuple[int, float]] = []
+            result: list[tuple[int, complex]] = []
             args = [substitute] if not isinstance(substitute, Add) else substitute.args
             for arg in args:
                 if is_number_type(arg):
@@ -558,6 +567,7 @@ class NpaRelaxation(Relaxation):
             objective: The objective expression, or None for a zero
                 objective.
         """
+        facvar: list[complex]
         if isinstance(objective, (MomentEntry, MomentExpr)):
             facvar = self._moment_expr_facvar(as_moment_expr(objective))
         elif objective is not None:
@@ -565,7 +575,7 @@ class NpaRelaxation(Relaxation):
                 simplify_polynomial(objective, self._substitutions)
             )
         else:
-            facvar = [0] * (self._builder.n_vars + 1)
+            facvar = [0.0] * (self._builder.n_vars + 1)
         if facvar[0] != 0:
             logger.warning(
                 "The objective function has a non-zero constant term; it is "
@@ -573,13 +583,13 @@ class NpaRelaxation(Relaxation):
             )
         self._builder.set_objective(facvar)
 
-    def _get_facvar(self, polynomial: Any) -> list[float]:
+    def _get_facvar(self, polynomial: Any) -> list[complex]:
         """The dense (n_vars + 1) vector of a polynomial over the moments.
 
         The entries are indexed by SDP variable, position 0 holding the
         constant term.
         """
-        facvar = [0] * (self._builder.n_vars + 1)
+        facvar: list[complex] = [0.0] * (self._builder.n_vars + 1)
         if is_number_type(polynomial):
             facvar[0] = polynomial
             return facvar
@@ -596,7 +606,7 @@ class NpaRelaxation(Relaxation):
         element: Any,
         enablesubstitution: bool = True,
         daggered: bool = False,
-    ) -> list[tuple[int, float]]:
+    ) -> list[tuple[int, complex]]:
         """Resolve a monomial of a constraint or objective to (variable, coeff).
 
         Moment substitutions, the regular substitution rules, and the
@@ -613,7 +623,7 @@ class NpaRelaxation(Relaxation):
         Returns:
             The (variable, coefficient) pairs.
         """
-        result: list[tuple[int, float]] = []
+        result: list[tuple[int, complex]] = []
         processed_element, coeff1 = separate_scalar_factor(element)
         if processed_element in self._moment_substitutions:
             inner = self._get_index_of_monomial(
@@ -626,10 +636,7 @@ class NpaRelaxation(Relaxation):
             )
         if is_number_type(processed_element):
             return [(0, coeff1)]
-        if processed_element.is_Add:
-            monomials = processed_element.args
-        else:
-            monomials = [processed_element]
+        monomials = processed_element.args if processed_element.is_Add else [processed_element]
         for monomial in monomials:
             monomial, coeff2 = separate_scalar_factor(monomial)
             coeff = coeff1 * coeff2
@@ -691,15 +698,15 @@ class NpaRelaxation(Relaxation):
             for k, factor in self._resolve_position(term):
                 self._builder.add_entry(block, 0, 0, k, term.coefficient * factor)
 
-    def _moment_expr_facvar(self, expr: MomentExpr) -> list[float]:
+    def _moment_expr_facvar(self, expr: MomentExpr) -> list[complex]:
         """The dense (n_vars + 1) vector of a linear combination of moments."""
-        facvar = [0] * (self._builder.n_vars + 1)
+        facvar: list[complex] = [0.0] * (self._builder.n_vars + 1)
         for term in expr.terms:
             for k, factor in self._resolve_position(term):
                 facvar[k] += term.coefficient * factor
         return facvar
 
-    def _resolve_position(self, term: MomentEntry) -> list[tuple[int, float]]:
+    def _resolve_position(self, term: MomentEntry) -> list[tuple[int, complex]]:
         """Resolve a MomentExpr term to (variable, factor) entries.
 
         The term's block counts moment matrix blocks (parameter blocks are
@@ -820,7 +827,7 @@ class NpaRelaxation(Relaxation):
         Returns:
             The matrix A of shape (n_rows, n_vars + 1).
         """
-        rows: list[list[float]] = []
+        rows: list[list[complex]] = []
         equalities = self.problem.equalities
         if equalities is not None:
             for constraint in flatten([equalities]):

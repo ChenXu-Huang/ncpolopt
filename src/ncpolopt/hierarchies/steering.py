@@ -15,7 +15,7 @@ be created with ``Problem(..., normalized=False, complex_matrix=True)``.
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -23,6 +23,9 @@ from ..block_structure import BlockKind, BlockStructure
 from ..expressions import is_number_type, iscomplex
 from ..relaxation import NpaRelaxation
 from ..substitutions import apply_substitutions
+
+if TYPE_CHECKING:  # NOTE: problem.py imports the relaxation lazily.
+    from ..problem import Problem
 
 
 class SteeringHierarchy(NpaRelaxation):
@@ -37,7 +40,7 @@ class SteeringHierarchy(NpaRelaxation):
 
     def __init__(
         self,
-        problem: Any,
+        problem: Problem,
         level: int,
         *,
         matrix_var_dim: int,
@@ -202,7 +205,7 @@ class SteeringHierarchy(NpaRelaxation):
         else:
             super().set_objective(objective)
 
-    def _trace_facvar(self, objective: Any) -> list[Any]:
+    def _trace_facvar(self, objective: Any) -> list[complex]:
         """The dense objective vector of a matrix-valued steering objective.
 
         The coefficient of the (r, c) sub-position variable of a moment
@@ -219,7 +222,7 @@ class SteeringHierarchy(NpaRelaxation):
             The objective vector, indexed by SDP variable.
         """
         d = self.matrix_var_dim
-        facvar = [0] * (self._builder.n_vars + 1)
+        facvar: list[complex] = [0.0] * (self._builder.n_vars + 1)
         coefficients: dict[Any, np.ndarray] = {}
         for i in range(d):
             for j in range(d):

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from sympy import S, expand
 from sympy.physics.quantum.dagger import Dagger
@@ -154,7 +156,10 @@ def test_apply_substitutions_fermionic_chain() -> None:
             hamiltonian += -t * Dagger(fu[j]) * fu[k] - t * Dagger(fu[k]) * fu[j]
             hamiltonian += -t * Dagger(fd[j]) * fd[k] - t * Dagger(fd[k]) * fd[j]
 
-    monomials = expand(hamiltonian).as_coeff_mul()[1][0].as_coeff_add()[1]
+    # NOTE: SymPy does not expose the factor tuple of ``as_coeff_mul`` in its
+    # annotations, so the extraction stays untyped here.
+    expanded: Any = expand(hamiltonian)
+    monomials = expanded.as_coeff_mul()[1][0].as_coeff_add()[1]
     substituted = sum(apply_substitutions(m, substitutions) for m in monomials)
     reference = sum(_sympy_fixpoint(m, substitutions) for m in monomials)
     assert substituted == expand(reference)

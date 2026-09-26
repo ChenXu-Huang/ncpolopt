@@ -99,7 +99,7 @@ class SolverResult:
     y_mat: tuple[np.ndarray, ...] = ()
     solution_time: float = 0.0
     variables: np.ndarray = field(default_factory=lambda: np.array([]))
-    raw: Any = None
+    raw: object | None = None
 
 
 #: A backend implementation: map an SdpProblem to a SolverResult.

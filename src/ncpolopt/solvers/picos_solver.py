@@ -211,7 +211,8 @@ def solve_with_picos(problem: SdpProblem, settings: SolverSettings) -> SolverRes
     tstart = time.monotonic()
     solution = P.solve()
     solution_time = time.monotonic() - tstart
-    status = _STATUS_MAP.get(solution.status, solution.status)
+    picos_status = solution.status or "unknown"
+    status = _STATUS_MAP.get(picos_status, picos_status)
     locations = [problem.column_locations[k] for k in range(1, problem.n_vars + 1)]
     x = np.array([model.moment.value[i0, j0] for _, i0, j0 in locations])
     x_mat = block_matrices(problem, x)

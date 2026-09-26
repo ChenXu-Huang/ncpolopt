@@ -11,8 +11,8 @@ install.
 from __future__ import annotations
 
 import importlib.util
-from typing import Any
 
+from ..sdp_problem import SdpProblem
 from .base import (
     SolverBackend,
     SolverError,
@@ -155,7 +155,7 @@ def _resolve(kind: SolverKind | str | None) -> SolverBackend:
 
 
 def solve_problem(
-    problem: Any,
+    problem: SdpProblem,
     solver: SolverKind | str | None = "auto",
     settings: SolverSettings | None = None,
 ) -> SolverResult:

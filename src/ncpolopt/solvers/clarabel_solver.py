@@ -83,6 +83,10 @@ def canonical_clarabel_data(sdp: SdpProblem) -> tuple[Any, np.ndarray, list[Any]
     import clarabel
     from scipy import sparse as sp
 
+    # NOTE: Clarabel is a compiled extension without type information, so its
+    # names are reached through the untyped module object.
+    clarabel_api: Any = clarabel
+
     n = sdp.n_vars
     n_rows: list[int] = []
     n_cols: list[int] = []
@@ -98,10 +102,10 @@ def canonical_clarabel_data(sdp: SdpProblem) -> tuple[Any, np.ndarray, list[Any]
         cols = np.asarray(block.coo.col, dtype=np.int64)
         data = np.asarray(block.coo.data, dtype=float)
         if size == 1:
-            const = 0.0
+            scalar_const = 0.0
             for k, v in zip(rows, data, strict=True):
                 if k == 0:
-                    const += v
+                    scalar_const += v
                 else:
                     n_rows.append(len(n_b))
                     n_cols.append(int(k) - 1)
@@ -109,8 +113,8 @@ def canonical_clarabel_data(sdp: SdpProblem) -> tuple[Any, np.ndarray, list[Any]
             if len(rows) == 0:
                 # The package's empty-scalar artifact: `0.0 >= 0` becomes
                 # Python True, which CVXPY turns into b = +1.0.
-                const = 1.0
-            n_b.append(const)
+                scalar_const = 1.0
+            n_b.append(scalar_const)
             continue
         # Constant matrix (upper-triangle COO, mirrored) for the b rows.
         const = np.zeros((size, size))
@@ -145,8 +149,10 @@ def canonical_clarabel_data(sdp: SdpProblem) -> tuple[Any, np.ndarray, list[Any]
     )
     cones: list[Any] = []
     if n_b:
-        cones.append(clarabel.NonnegativeConeT(len(n_b)))
-    cones.extend(clarabel.PSDTriangleConeT(blk.size) for blk in sdp.blocks if blk.size > 1)
+        cones.append(clarabel_api.NonnegativeConeT(len(n_b)))
+    cones.extend(
+        clarabel_api.PSDTriangleConeT(blk.size) for blk in sdp.blocks if blk.size > 1
+    )
     # Package data-dict convention: coefficients are negated (b - A x in K
     # is the effective CLARABEL constraint), constants are not.
     return -A, b, cones
@@ -213,15 +219,21 @@ def solve_with_clarabel(problem: SdpProblem, settings: SolverSettings) -> Solver
     import clarabel
     from scipy import sparse as sp
 
+    # NOTE: Clarabel is a compiled extension without type information, so its
+    # names are reached through the untyped module object.
+    clarabel_api: Any = clarabel
+
     A, b, cones = canonical_clarabel_data(problem)
     q = np.asarray(problem.obj, dtype=float)
-    clarabel_settings = clarabel.DefaultSettings()
+    clarabel_settings = clarabel_api.DefaultSettings()
     clarabel_settings.verbose = bool(settings.verbose)
     for key, value in settings.solver_options.items():
         setattr(clarabel_settings, key, value)
     n = A.shape[1]
     tstart = time.monotonic()
-    solver = clarabel.DefaultSolver(sp.csc_matrix((n, n)), q, A, b, cones, clarabel_settings)
+    solver = clarabel_api.DefaultSolver(
+        sp.csc_matrix((n, n)), q, A, b, cones, clarabel_settings
+    )
     solver.solve()
     solution_time = time.monotonic() - tstart
     sol = solver.get_solution()

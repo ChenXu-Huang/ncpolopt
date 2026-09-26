@@ -10,9 +10,10 @@ on them heavily.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
-from sympy import Pow, S, Symbol, expand
+from sympy import Expr, Pow, S, Symbol, expand
 from sympy.physics.quantum import Operator
 
 from .expressions import is_adjoint, is_number_type
@@ -46,15 +47,15 @@ def split_commutative_parts(e: Any) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
         the tuples may be empty.
     """
     args = e.args if e.is_Mul else (e,)
-    for _index, m in enumerate(args):
+    split = len(args)
+    for index, m in enumerate(args):
         if not m.is_commutative:
+            split = index
             break
-    else:
-        _index += 1
-    return args[:_index], args[_index:]
+    return args[:split], args[split:]
 
 
-def separate_scalar_factor(element: Any) -> tuple[Any, float]:
+def separate_scalar_factor(element: Any) -> tuple[Any, complex]:
     """Separate the scalar coefficient from a term of a polynomial.
 
     Args:
@@ -64,7 +65,7 @@ def separate_scalar_factor(element: Any) -> tuple[Any, float]:
         A pair ``(monomial, coefficient)`` with the monomial freed of its
         scalar factor (imaginary units folded into the coefficient).
     """
-    coeff = 1.0
+    coeff: complex = 1.0
     monomial = S.One
     if isinstance(element, (int, float, complex)):
         coeff *= element
@@ -259,11 +260,11 @@ def fast_substitute(monomial: Any, old_sub: Any, new_sub: Any) -> Any:
     comm_factors, ncomm_factors = split_commutative_parts(monomial)
     old_comm_factors, old_ncomm_factors = split_commutative_parts(old_sub)
     if not isinstance(new_sub, (int, float, complex)):
-        new_comm_factors, _ = split_commutative_parts(new_sub)
+        new_comm_factors: Sequence[Any] = split_commutative_parts(new_sub)[0]
     else:
         new_comm_factors = [new_sub]
 
-    comm_monomial = 1
+    comm_monomial: Expr = S.One
     is_constant_term = False
     if comm_factors != ():
         if len(comm_factors) == 1 and is_number_type(comm_factors[0]):

@@ -40,7 +40,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from common import (
+from .common import (
     npa_tau_relaxation_value,
     operator_relaxation_value,
     verbatim_relaxation_value,

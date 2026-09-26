@@ -20,13 +20,16 @@ Two fixes are applied over the old implementation:
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sympy import S
 from sympy.physics.quantum.dagger import Dagger
 
 from ..monomials import ncdegree
 from ..relaxation import NpaRelaxation
+
+if TYPE_CHECKING:  # NOTE: problem.py imports the relaxation lazily.
+    from ..problem import Problem
 
 
 class RdmHierarchy(NpaRelaxation):
@@ -43,7 +46,7 @@ class RdmHierarchy(NpaRelaxation):
 
     def __init__(
         self,
-        problem: Any,
+        problem: Problem,
         level: int,
         *,
         circulant: bool = False,

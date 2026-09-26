@@ -108,7 +108,7 @@ def _monomial_support(variables: list[Any], monomial: Any) -> list[int]:
             base = s.base
             if is_adjoint(base):
                 base = base.adjoint()
-            tmp_support[variables.index(base)] = s.exp
+            tmp_support[variables.index(base)] = int(s.exp)
         elif is_adjoint(s):
             tmp_support[variables.index(s.adjoint())] = 1
         elif isinstance(s, (Operator, Symbol)):

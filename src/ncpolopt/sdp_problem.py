@@ -15,7 +15,7 @@ construction; :meth:`SdpBuilder.freeze` turns it into an immutable
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from scipy.sparse import coo_array
@@ -42,7 +42,10 @@ class SparseBlock:
 
     def constant_matrix(self) -> np.ndarray:
         """Return the constant matrix A0 of the block."""
-        return self.evaluate(np.zeros(self.coo.shape[0] - 1))
+        # NOTE: SciPy types ``shape`` as optional although a constructed
+        # sparse array always carries one.
+        n_variables = cast("tuple[int, ...]", self.coo.shape)[0] - 1
+        return self.evaluate(np.zeros(n_variables))
 
     def evaluate(self, x: np.ndarray) -> np.ndarray:
         """Evaluate the block matrix at the primal solution ``x``.
@@ -124,10 +127,12 @@ class SdpBuilder:
     ) -> None:
         self.block_sizes = list(block_sizes)
         self.normalized = normalized
-        self._dtype = np.complex128 if complex_matrix else np.float64
+        self._dtype: np.dtype[Any] = np.dtype(
+            np.complex128 if complex_matrix else np.float64
+        )
         self._rows: list[list[int]] = [[] for _ in block_sizes]
         self._cols: list[list[int]] = [[] for _ in block_sizes]
-        self._data: list[list[Any]] = [[] for _ in block_sizes]
+        self._data: list[list[complex]] = [[] for _ in block_sizes]
         self._n_vars = 0
         self.column_locations: dict[int, tuple[int, int, int]] = {}
         self.monomial_index: dict[Any, int] = {}
@@ -139,7 +144,7 @@ class SdpBuilder:
         return self._n_vars
 
     @property
-    def dtype(self) -> np.dtype:
+    def dtype(self) -> np.dtype[Any]:
         """The dtype of the coefficient data (float or complex)."""
         return self._dtype
 
@@ -166,7 +171,7 @@ class SdpBuilder:
         return self._n_vars
 
     def add_entry(
-        self, block: int, i: int, j: int, variable: int, coefficient: Any
+        self, block: int, i: int, j: int, variable: int, coefficient: complex
     ) -> None:
         """Add ``coefficient * x_variable`` at position (i, j) of a block.
 
@@ -187,22 +192,22 @@ class SdpBuilder:
         self._cols[block].append(int(position))
         self._data[block].append(coefficient)
 
-    def set_objective(self, facvar: list[Any]) -> None:
+    def set_objective(self, facvar: list[complex]) -> None:
         """Set the objective from a dense facvar vector.
 
         Args:
             facvar: Length ``n_vars + 1`` vector whose first entry is the
                 constant term of the objective.
         """
-        facvar = np.asarray(facvar, dtype=self._dtype)
-        if len(facvar) != self._n_vars + 1:
+        obj_facvar = np.asarray(facvar, dtype=self._dtype)
+        if len(obj_facvar) != self._n_vars + 1:
             raise ValueError(
-                f"Objective facvar has length {len(facvar)}, expected "
+                f"Objective facvar has length {len(obj_facvar)}, expected "
                 f"{self._n_vars + 1}."
             )
-        self.obj_facvar = facvar
+        self.obj_facvar = obj_facvar
 
-    def entries_of(self, block: int) -> list[tuple[int, int, int, Any]]:
+    def entries_of(self, block: int) -> list[tuple[int, int, int, complex]]:
         """The (variable, i, j, coefficient) entries of a block.
 
         Args:
@@ -219,7 +224,7 @@ class SdpBuilder:
             )
         ]
 
-    def set_entries(self, block: int, entries: list[tuple[int, int, int, Any]]) -> None:
+    def set_entries(self, block: int, entries: list[tuple[int, int, int, complex]]) -> None:
         """Replace the entries of a block with new (variable, i, j, value) tuples.
 
         Used by the partial-transpose rearrangement of extra moment matrices,
@@ -232,7 +237,7 @@ class SdpBuilder:
         size = self.block_sizes[block]
         rows: list[int] = []
         cols: list[int] = []
-        data: list[Any] = []
+        data: list[complex] = []
         for k, i, j, value in entries:
             rows.append(int(k))
             cols.append(i * size + j)
@@ -265,7 +270,7 @@ class SdpBuilder:
             const_part = np.zeros(self.block_sizes[block] ** 2, dtype=self._dtype)
             new_rows: list[int] = []
             new_cols: list[int] = []
-            new_data: list[Any] = []
+            new_data: list[complex] = []
             mask = rows >= 1
             if mask.any():
                 k_idx = rows[mask] - 1
@@ -280,15 +285,18 @@ class SdpBuilder:
                 # position repeats per free variable (repeat).
                 spread = basis[k_idx] * d[:, None]
                 nz = (spread != 0).ravel()
-                new_rows = list(np.tile(np.arange(1, n_free + 1), len(k_idx))[nz])
-                new_cols = list(np.repeat(pos, n_free)[nz])
+                new_rows = [
+                    int(v)
+                    for v in np.tile(np.arange(1, n_free + 1), len(k_idx))[nz]
+                ]
+                new_cols = [int(v) for v in np.repeat(pos, n_free)[nz]]
                 new_data = list(spread.ravel()[nz])
             const_mask = rows == 0
             if const_mask.any():
                 np.add.at(const_part, cols[const_mask], data[const_mask])
             const_nz = np.nonzero(const_part)[0]
             self._rows[block] = [0] * len(const_nz) + new_rows
-            self._cols[block] = list(const_nz) + new_cols
+            self._cols[block] = [int(v) for v in const_nz] + new_cols
             self._data[block] = list(const_part[const_nz]) + new_data
         c = self.obj_facvar
         new_c = np.zeros(n_free + 1, dtype=self._dtype)

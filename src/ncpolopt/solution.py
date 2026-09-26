@@ -10,6 +10,7 @@ through the ``column_locations`` table recorded at construction time.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -122,7 +123,7 @@ class Solution:
 
     def _index_of_monomial(
         self, element: Any
-    ) -> list[tuple[int, float]]:
+    ) -> list[tuple[int, complex]]:
         """Resolve a polynomial element to (variable, coefficient) pairs.
 
         Mirrors the construction-time ``_get_index_of_monomial``: moment
@@ -139,7 +140,7 @@ class Solution:
             RuntimeError: If the reduced monomial is not in the moment basis
                 (its degree exceeds the relaxation level).
         """
-        result: list[tuple[int, float]] = []
+        result: list[tuple[int, complex]] = []
         processed_element, coeff1 = separate_scalar_factor(element)
         if processed_element in self.sdp.moment_substitutions:
             inner = self._index_of_monomial(
@@ -233,15 +234,16 @@ class Solution:
             where ``A_k,b`` is the coefficient matrix of the monomial.
         """
         y_mat = self._require_y_mat()
-        if blocks is None:
-            blocks = range(len(self.sdp.blocks))
+        block_indices: Sequence[int] = (
+            range(len(self.sdp.blocks)) if blocks is None else blocks
+        )
         index = (
             0
             if is_number_type(monomial)
             else self.sdp.monomial_index[monomial]
         )
         result = 0.0
-        for block in blocks:
+        for block in block_indices:
             coo = self.sdp.blocks[block].coo
             size = self.sdp.blocks[block].size
             for k, position, value in zip(
@@ -293,9 +295,11 @@ class Solution:
                 "problem has no moment basis."
             )
         if blocks is None:
-            blocks = range(len(y_mat))
+            block_indices: Sequence[int] = range(len(y_mat))
+        else:
+            block_indices = blocks
         sos = []
-        for block in blocks:
+        for block in block_indices:
             vals, vecs = np.linalg.eigh(y_mat[block])
             term = 0
             for j, val in enumerate(vals):
@@ -340,6 +344,7 @@ class Solution:
             xmat = self._require_x_mat()[self._moment_block]
         ranks = []
         levels = range(1, self.sdp.level + 1) if baselevel == 0 else [baselevel]
+        base_monomials: list[Any] = []
         for level in levels:
             base_monomials = pick_monomials_up_to_degree(
                 list(self.sdp.moment_basis), level

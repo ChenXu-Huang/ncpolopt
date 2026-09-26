@@ -49,6 +49,19 @@ logger = logging.getLogger(__name__)
 TOL = 1e-9
 
 
+def _as_float(value: object) -> float:
+    """Coerce a value reported by a CVXPY problem to a Python float.
+
+    Args:
+        value: The scalar CVXPY reported (a float, NumPy scalar or SymPy
+            number, depending on the constraint kind).
+
+    Returns:
+        The value as a Python float.
+    """
+    return float(np.asarray(value, dtype=float).item())
+
+
 def _check(condition: bool, *context: object) -> None:
     """Fail the verification with context when ``condition`` is false.
 
@@ -88,7 +101,7 @@ def dual_max_problem_value(p: float) -> float:
     problem.solve(solver=cp.CLARABEL)
     if problem.status != "optimal":
         raise RuntimeError(f"eq. (6) failed with status {problem.status!r}.")
-    return float(problem.value)
+    return _as_float(problem.value)
 
 
 def dual_min_problem_value(p: float, with_z_psd: bool) -> float:
@@ -108,14 +121,14 @@ def dual_min_problem_value(p: float, with_z_psd: bool) -> float:
 
     j_m = choi_state(p)
     z = cp.Variable((2, 2), hermitian=True)
-    constraints: list[object] = [cp.kron(np.eye(DIM), z) - j_m >> 0]
+    constraints: list[cp.Constraint] = [cp.kron(np.eye(DIM), z) - j_m >> 0]
     if with_z_psd:
         constraints.append(z >> 0)
     problem = cp.Problem(cp.Minimize(cp.real(cp.trace(z)) / DIM), constraints)
     problem.solve(solver=cp.CLARABEL)
     if problem.status != "optimal":
         raise RuntimeError(f"eq. (9) failed with status {problem.status!r}.")
-    return float(problem.value)
+    return _as_float(problem.value)
 
 
 def check_correlation_tables(p: float) -> None:
@@ -187,7 +200,7 @@ def run(p: float) -> None:
 
 def main() -> None:
     """Parse arguments and run the checks."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description="Verify the dual SDPs of the document.")
     parser.add_argument("--p", type=float, default=None, help="single channel parameter")
     parser.add_argument(
         "--p-grid", type=str, default="0.25,0.3,0.5,0.75,1.0", help="comma-separated grid"

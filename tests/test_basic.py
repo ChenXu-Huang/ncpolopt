@@ -9,10 +9,11 @@ backend, which the ``solver_kind`` fixture does automatically.
 from __future__ import annotations
 
 from ncpolopt.problem import Problem
+from ncpolopt.solvers.base import SolverKind
 from ncpolopt.variables import generate_operators, generate_variables
 
 
-def test_example_noncommutative(solver_kind: object) -> None:
+def test_example_noncommutative(solver_kind: SolverKind) -> None:
     X = generate_operators("x", 2, hermitian=True)
     problem = Problem(
         X,
@@ -24,7 +25,7 @@ def test_example_noncommutative(solver_kind: object) -> None:
     assert abs(solution.primal + 0.75) < 10e-5
 
 
-def test_example_commutative(solver_kind: object) -> None:
+def test_example_commutative(solver_kind: SolverKind) -> None:
     x = generate_variables("x", 2, commutative=True)
     problem = Problem(
         x,

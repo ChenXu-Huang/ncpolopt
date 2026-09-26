@@ -10,8 +10,9 @@ one -- the string DSL entry ``"+0[0,0]-1.0"`` of the old suite becomes
 from __future__ import annotations
 
 import numpy as np
+from sympy import Expr
 
-from ncpolopt.moment import MomentEntry
+from ncpolopt.moment import MomentEntry, MomentExpr
 from ncpolopt.physics import (
     Probability,
     define_objective_with_I,
@@ -19,10 +20,11 @@ from ncpolopt.physics import (
     projective_measurement_constraints,
 )
 from ncpolopt.problem import Problem
+from ncpolopt.solvers.base import SolverKind
 from ncpolopt.variables import generate_operators
 
 
-def test_chsh(solver_kind: object) -> None:
+def test_chsh(solver_kind: SolverKind) -> None:
     def expectation_values(measurement: list[list[object]], outcomes):
         exp_values = []
         for k in range(len(measurement)):
@@ -47,7 +49,7 @@ def test_chsh(solver_kind: object) -> None:
     assert abs(solution.primal + 2 * np.sqrt(2)) < 10e-5
 
 
-def test_chsh_mixed_level(solver_kind: object) -> None:
+def test_chsh_mixed_level(solver_kind: SolverKind) -> None:
     I_matrix = [[0, -1, 0], [-1, 1, 1], [0, 1, -1]]
     P = Probability([2, 2], [2, 2])
     problem = Problem(
@@ -60,8 +62,8 @@ def test_chsh_mixed_level(solver_kind: object) -> None:
     assert abs(solution.primal + (np.sqrt(2) - 1) / 2) < 10e-5
 
 
-def test_elegant_bell(solver_kind: object) -> None:
-    I_matrix = [
+def test_elegant_bell(solver_kind: SolverKind) -> None:
+    I_matrix: list[list[float]] = [
         [0, -1.5, 0.5, 0.5, 0.5],
         [0, 1, 1, -1, -1],
         [0, 1, -1, 1, -1],
@@ -73,7 +75,7 @@ def test_elegant_bell(solver_kind: object) -> None:
     assert abs(violation + np.sqrt(3)) < 10e-5
 
 
-def test_nieto_silleras(solver_kind: object) -> None:
+def test_nieto_silleras(solver_kind: SolverKind) -> None:
     p = [
         0.5,
         0.5,
@@ -85,7 +87,7 @@ def test_nieto_silleras(solver_kind: object) -> None:
         0.07322330470336313,
     ]
     P = Probability([2, 2], [2, 2])
-    behaviour_constraint = [
+    behaviour_constraint: list[Expr | MomentExpr] = [
         P([0], [0], "A") - p[0],
         P([0], [1], "A") - p[1],
         P([0], [0], "B") - p[2],

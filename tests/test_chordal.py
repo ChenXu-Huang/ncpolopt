@@ -11,6 +11,8 @@ produce the same clique sets.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 import pytest
 
@@ -23,7 +25,9 @@ from ncpolopt.problem import Problem
 from ncpolopt.variables import generate_variables
 
 
-def _indicator_matrix(variables: list[object], cliques: list[list[object]]) -> np.ndarray:
+def _indicator_matrix(
+    variables: Sequence[object], cliques: Sequence[Sequence[object]]
+) -> np.ndarray:
     """The clique indicator rows expected by :func:`find_clique_index`.
 
     Args:

@@ -84,3 +84,12 @@ addopts = "-ra"
 markers = [
     "slow: multi-minute solver runs (skipped in CI via -m 'not slow')",
 ]
+
+[tool.pyright]
+include = ["src/ncpolopt", "tests", "examples"]
+exclude = ["**/__pycache__", ".venv", "temp"]
+extraPaths = ["examples"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.13"
+typeCheckingMode = "standard"

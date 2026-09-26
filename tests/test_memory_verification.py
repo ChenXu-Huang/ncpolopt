@@ -34,9 +34,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples" / "quantum_memory"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples"))
 
-import common
+from quantum_memory import common
 
 DIM = 2  #: The document's d: each qubit subsystem is a qubit.
 
@@ -199,6 +199,19 @@ def test_correlation_table() -> None:
 # --- The dual SDPs of eq. (6) and eq. (9) -----------------------------------
 
 
+def _as_float(value: object) -> float:
+    """Coerce a value reported by a solver object to a Python float.
+
+    Args:
+        value: The scalar CVXPY reported (a float, NumPy scalar or SymPy
+            number, depending on the constraint kind).
+
+    Returns:
+        The value as a Python float.
+    """
+    return float(np.asarray(value, dtype=float).item())
+
+
 def _dual_sdp_values(p: float) -> tuple[float, float, float]:
     """Solve eq. (6) and eq. (9) with and without the redundant Z >= 0.
 
@@ -233,7 +246,11 @@ def _dual_sdp_values(p: float) -> tuple[float, float, float]:
     )
     dual_plain.solve(solver="CLARABEL")
     assert dual_plain.status in ("optimal", "optimal_inaccurate")
-    return float(primal.value), float(dual.value), float(dual_plain.value)
+    return (
+        _as_float(primal.value),
+        _as_float(dual.value),
+        _as_float(dual_plain.value),
+    )
 
 
 def test_dual_sdps_equal_fidelity() -> None:

@@ -29,15 +29,18 @@ package.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import numpy as np
 from sympy import S
+from sympy import adjoint as _sympy_adjoint
 
 if TYPE_CHECKING:
     import cvxpy as cp
+    from sympy import Basic, Expr
 
     from ncpolopt import Problem
+    from ncpolopt.moment import MomentEntry, MomentExpr
 
 FunctionalKey = tuple[tuple[float, ...], tuple[float, ...]]
 
@@ -396,9 +399,9 @@ def _class_expression(keys: list[list[FunctionalKey]]) -> cp.Expression:
     import cvxpy as cp
 
     classes: dict[FunctionalKey, int] = {}
-    variables: dict[int, object] = {}
+    variables: dict[int, cp.Expression] = {}
 
-    def var_for(key: FunctionalKey) -> object:
+    def var_for(key: FunctionalKey) -> cp.Expression:
         if key in classes:
             return variables[classes[key]]
         adjoint = _conjugate_key(key)
@@ -484,7 +487,7 @@ def verbatim_relaxation_value(
                         words.append(word)
     m = _class_expression(_functional_keys(words, partial_trace_b2))
     l_block = _class_expression(_functional_keys(words, partial_trace_a0b2))
-    constraints: list[object] = [m >> 0, l_block >> 0, l_block - m >> 0]
+    constraints: list[cp.Constraint] = [m >> 0, l_block >> 0, l_block - m >> 0]
 
     for alpha in range(n_outputs):
         for x in range(4):
@@ -506,7 +509,10 @@ def verbatim_relaxation_value(
         for y in range(4):
             constraints.append(block[:, 1 + y] + block[:, 1 + 4 + y] == block[:, i_w + y])
         if n_outputs == 4:
-            constraints.append(sum(block[:, 1 + 16 + a] for a in range(4)) == block[:, 0])
+            # NOTE: the Expression side leads the comparison: ``sum`` over
+            # expressions is typed ``Expression | Literal[0]``, and only an
+            # Expression left operand resolves to the Equality constraint.
+            constraints.append(block[:, 0] == sum(block[:, 1 + 16 + a] for a in range(4)))
 
     # The full complex Pauli-decomposition relations between the degree-2
     # and degree-1 words, ``X_x X_z = sum_t c_t X_t`` (transposed product)
@@ -544,13 +550,27 @@ def verbatim_relaxation_value(
     # even when its own gap is ~1e-10; accept both statuses.
     if problem.status not in ("optimal", "optimal_inaccurate"):
         raise RuntimeError(f"Verbatim relaxation failed with status {problem.status!r}.")
-    return float(problem.value)
+    return _as_float(problem.value)
+
+
+def _as_float(value: object) -> float:
+    """Coerce a value reported by a CVXPY problem to a Python float.
+
+    Args:
+        value: The scalar CVXPY reported (a float, NumPy scalar or SymPy
+            number, depending on the constraint kind).
+
+    Returns:
+        The value as a Python float.
+    """
+    return float(np.asarray(value, dtype=float).item())
 
 
 def _realify(mat: np.ndarray) -> np.ndarray:
     """The doubled real symmetric form ``[[Re, -Im], [Im, Re]]`` of a
     Hermitian matrix (PSD iff the complex matrix is PSD)."""
-    return np.block([[mat.real, -mat.imag], [mat.imag, mat.real]])
+    real, imag = np.real(mat), np.imag(mat)
+    return np.block([[real, -imag], [imag, real]])
 
 
 def operator_relaxation_value(
@@ -621,18 +641,30 @@ def operator_relaxation_value(
     gm = [(m + m.conj().T) / 2 for m in gm]  # exact Hermiticity
     hm = [(m + m.conj().T) / 2 for m in hm]
 
-    d_real = sum(t_z[k] * _realify(hm[k]) for k in range(len(z_basis))) - sum(
-        t_j[k] * _realify(gm[k]) for k in range(len(j_basis))
+    # NOTE: ``sum`` keeps the bare ``int`` 0 start in its type whenever the
+    # iterable might be empty; the explicit CVXPY zero keeps these sums
+    # expressions so they can be turned into constraints.
+    d_real = sum(
+        (t_z[k] * _realify(hm[k]) for k in range(len(z_basis))), cp.Constant(0.0)
+    ) - sum(
+        (t_j[k] * _realify(gm[k]) for k in range(len(j_basis))), cp.Constant(0.0)
     )
-    j_real = sum(t_j[k] * _realify(b) for k, b in enumerate(j_basis))
-    z_real = sum(t_z[k] * _realify(b) for k, b in enumerate(z_basis))
-    constraints: list[object] = [j_real >> 0, z_real >> 0, d_real >> 0]
+    j_real = sum(
+        (t_j[k] * _realify(b) for k, b in enumerate(j_basis)), cp.Constant(0.0)
+    )
+    z_real = sum(
+        (t_z[k] * _realify(b) for k, b in enumerate(z_basis)), cp.Constant(0.0)
+    )
+    constraints: list[cp.Constraint] = [j_real >> 0, z_real >> 0, d_real >> 0]
     for alpha in range(n_outputs):
         for x in range(4):
             for y in range(4):
                 i_u = 1 + 4 * x + y
                 i_v = 1 + 16 + alpha
-                pin = sum(t_j[k] * gm[k][i_v, i_u].real for k in range(len(j_basis)))
+                pin = sum(
+                    (t_j[k] * gm[k][i_v, i_u].real for k in range(len(j_basis))),
+                    cp.Constant(0.0),
+                )
                 constraints.append(pin == correlations_via_choi(p, x, y, alpha) / DIM)
 
     # H_{0,0} = Tr_{A0,B2}(I) = 4 I_2, so L[I, I] = 4 Tr(Z) and the
@@ -642,7 +674,7 @@ def operator_relaxation_value(
     problem.solve(solver=solver)
     if problem.status not in ("optimal", "optimal_inaccurate"):
         raise RuntimeError(f"Operator relaxation failed with status {problem.status!r}.")
-    return float(problem.value)
+    return _as_float(problem.value)
 
 
 # --- The factored NPA-tau re-expression (Brown-style) -----------------------
@@ -662,11 +694,49 @@ def operator_relaxation_value(
 # is independent of the channel parameter ``p`` except the moment VALUES,
 # so the relation set is computed once per configuration and cached.
 
-_FACTORED_DATA: dict[int, dict[Any, Any]] = {}
-_FACTORED_CLASSES: dict[tuple, tuple[list[object], list[object], list[object]]] = {}
+class _FactoredData(TypedDict):
+    """The cached factored-algebra data of :func:`_factored_data`.
+
+    Attributes:
+        operators: The generators (rho_0..3, sigma_0..3, v_alpha, J, W).
+        substitutions: The word substitution rules of the algebra.
+        s_basis: The S-basis words (degree <= 2 over {rho, sigma, v}).
+        s_mats: The explicit 8x8 matrix of each S-generator.
+        word_matrix: Maps an S-basis word to its explicit 8x8 matrix.
+        probe_words: The probe words ``rho_x sigma_y v_0``.
+        vs: The Bell measurement operators ``v_alpha``.
+        j: The inserted J operator.
+        w: The inserted W operator.
+    """
+
+    operators: list[Expr]
+    substitutions: dict[Expr, Expr | int]
+    s_basis: list[Expr]
+    s_mats: dict[Basic, np.ndarray]
+    word_matrix: Callable[[Basic], np.ndarray]
+    probe_words: list[Expr]
+    vs: list[Expr]
+    j: Expr
+    w: Expr
 
 
-def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
+class _GroupRecord(TypedDict):
+    """One functional-class group of :func:`_functional_linearity_equalities`.
+
+    Attributes:
+        f: The real coordinates of the group's functional.
+        resolved: The SDP variable position, or the pinned constant.
+    """
+
+    f: np.ndarray
+    resolved: tuple[int, int] | float
+
+
+_FACTORED_DATA: dict[int, _FactoredData] = {}
+_FACTORED_CLASSES: dict[tuple, tuple[list[MomentExpr], list[Expr], list[Expr]]] = {}
+
+
+def _factored_data(n_outputs: int = 1) -> _FactoredData:
     """The factored-algebra operators, rules, basis and explicit matrices.
 
     The algebra is ``{rho, sigma, v, J, W}`` with ``n_outputs`` Bell
@@ -700,11 +770,11 @@ def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
 
     rhos = generate_operators("rho", 4, hermitian=True)
     sigmas = generate_operators("sigma", 4, hermitian=True)
-    vs = generate_operators("v", n_outputs, hermitian=True)
+    vs: list[Expr] = [*generate_operators("v", n_outputs, hermitian=True)]
     j, w = generate_operators("jw", 2, hermitian=True)
-    operators = [*rhos, *sigmas, *vs, j, w]
+    operators: list[Expr] = [*rhos, *sigmas, *vs, j, w]
 
-    substitutions: dict[object, object] = {}
+    substitutions: dict[Expr, Expr | int] = {}
     for rho in rhos:
         substitutions[rho**2] = rho
     for sigma in sigmas:
@@ -735,7 +805,7 @@ def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
     v_mats = [np.kron(np.eye(DIM), phi) for phi in bell_projectors()[:n_outputs]]
 
     s_generators = [*rhos, *sigmas, *vs]
-    s_mats: dict[object, np.ndarray] = dict(zip(rhos, rho_mats, strict=True))
+    s_mats: dict[Basic, np.ndarray] = dict(zip(rhos, rho_mats, strict=True))
     s_mats.update(zip(sigmas, sigma_mats, strict=True))
     s_mats.update(zip(vs, v_mats, strict=True))
     s_basis = get_all_monomials(s_generators, None, substitutions, 2)
@@ -751,7 +821,7 @@ def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
         for y in range(4)
     ]
 
-    def word_matrix(word: Any) -> np.ndarray:
+    def word_matrix(word: Basic) -> np.ndarray:
         """The explicit 8x8 matrix of an S-basis word (word order = product order)."""
         if word == 1:
             return np.eye(8, dtype=complex)
@@ -762,7 +832,7 @@ def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
             mat = mat @ s_mats[factor]
         return mat
 
-    _FACTORED_DATA[n_outputs] = {
+    factored: _FactoredData = {
         "operators": operators,
         "substitutions": substitutions,
         "s_basis": s_basis,
@@ -773,10 +843,11 @@ def _factored_data(n_outputs: int = 1) -> dict[Any, Any]:
         "j": j,
         "w": w,
     }
-    return _FACTORED_DATA[n_outputs]
+    _FACTORED_DATA[n_outputs] = factored
+    return factored
 
 
-def _factored_moments(p: float, n_outputs: int = 1) -> dict[object, object]:
+def _factored_moments(p: float, n_outputs: int = 1) -> dict[Basic, float]:
     """Pin every S-moment and the correlations to their tau values.
 
     The S-moments are pinned to their trace values under the maximally
@@ -798,7 +869,7 @@ def _factored_moments(p: float, n_outputs: int = 1) -> dict[object, object]:
 
     data = _factored_data(n_outputs)
     substitutions = data["substitutions"]
-    moments: dict[object, object] = trace_moment_pins(
+    moments: dict[Basic, float] = trace_moment_pins(
         [*data["s_basis"], *data["probe_words"]],
         data["word_matrix"],
         substitutions=substitutions,
@@ -821,7 +892,7 @@ def _factored_classes(
     *,
     probes: bool = True,
     families: tuple[str, ...] = ("linearity",),
-) -> tuple[list[object], list[object], list[object]]:
+) -> tuple[list[MomentExpr], list[Expr], list[Expr]]:
     """The p-independent class equalities, extramonomials and localizing basis.
 
     The relation set depends only on the moment KEYS, which do not change
@@ -882,6 +953,7 @@ def _factored_classes(
     # NOTE: the completeness relations' term monomials ``u^dagger g rho_x``
     # etc. need no generator-level extras: ``g.rho_x`` (degree 2) is already
     # in the level-2 word set.
+    pauli_specs: list[Any] = []
     if "pauli" in families:
         # The Pauli anticommutator relations need the degree-3 words
         # ``g.(rho_x rho_z)`` / ``g.(sigma_y sigma_z)`` as extramonomials.
@@ -907,7 +979,7 @@ def _factored_classes(
         localizing_basis=localizing_basis,
     )
     resolver = _moment_resolver(draft_problem)
-    momentequalities: list[object] = []
+    momentequalities: list[MomentExpr] = []
     if "classes" in families:
         momentequalities += class_moment_equalities(
             draft_problem,
@@ -937,7 +1009,7 @@ def _factored_classes(
 
 def _moment_resolver(
     problem: Problem,
-) -> Callable[[object], tuple[int, int] | float | None]:
+) -> Callable[[Basic], tuple[int, int] | float | None]:
     """The block-0 position/constant resolver of a draft build of ``problem``.
 
     Args:
@@ -961,7 +1033,7 @@ def _moment_resolver(
     draft = NpaRelaxation(problem, 2)
     block0 = draft.moment_block_indices[0]
 
-    def resolve(monomial: object) -> tuple[int, int] | float | None:
+    def resolve(monomial: Basic) -> tuple[int, int] | float | None:
         """The block-0 position or pinned value of a moment; None if absent.
 
         A ``(row, col)`` tuple locates the moment's SDP variable in block
@@ -974,7 +1046,7 @@ def _moment_resolver(
             return 0.0
         if monomial in pins:
             return float(np.real(pins[monomial]))
-        adjoint = apply_substitutions(monomial.adjoint(), substitutions)
+        adjoint = apply_substitutions(_sympy_adjoint(monomial), substitutions)
         if adjoint in pins:
             return float(np.real(np.conj(pins[adjoint])))
         k = draft.monomial_index.get(monomial)
@@ -992,12 +1064,12 @@ def _moment_resolver(
 
 def _linear_span_equalities(
     problem: Problem,
-    data: dict[Any, Any],
-    localizing_basis: list[object],
-    relations: list[list[tuple[float, object]]],
+    data: _FactoredData,
+    localizing_basis: list[Expr],
+    relations: list[list[tuple[float, Expr | None]]],
     label: str,
-    resolver: Callable[[object], tuple[int, int] | float | None] | None = None,
-) -> list[object]:
+    resolver: Callable[[Basic], tuple[int, int] | float | None] | None = None,
+) -> list[MomentExpr]:
     """Linear moment equalities lifting linear word relations into the
     inserted (J/W) blocks.
 
@@ -1035,13 +1107,13 @@ def _linear_span_equalities(
     j, w_op = data["j"], data["w"]
     resolve = resolver if resolver is not None else _moment_resolver(problem)
 
-    equalities: list[object] = []
+    equalities: list[MomentExpr] = []
     for gi, g in enumerate((j, w_op)):
         for ri, rel in enumerate(relations):
             for u in data["s_basis"]:
                 ua = u.adjoint()
                 for v in localizing_basis:
-                    terms: list[object] = []
+                    terms: list[MomentEntry] = []
                     constant = 0.0
                     missing = False
                     for coeff, factor in rel:
@@ -1101,11 +1173,11 @@ def _hermitian_basis(dim: int) -> list[np.ndarray]:
 
 def _functional_linearity_equalities(
     problem: Problem,
-    data: dict[Any, Any],
-    row_words: list[object],
-    col_words: list[object],
-    resolver: Callable[[object], tuple[int, int] | float | None] | None = None,
-) -> list[object]:
+    data: _FactoredData,
+    row_words: list[Expr],
+    col_words: list[Expr],
+    resolver: Callable[[Basic], tuple[int, int] | float | None] | None = None,
+) -> list[MomentExpr]:
     """Moment equalities enforcing the functional linearity of the
     inserted (J/W) blocks.
 
@@ -1156,7 +1228,7 @@ def _functional_linearity_equalities(
     def push(
         resolved: tuple[int, int] | float,
         coeff: float,
-        terms: list[object],
+        terms: list[MomentEntry],
         constant: list[float],
     ) -> None:
         """Append ``coeff * moment(resolved)`` to the relation in progress."""
@@ -1167,14 +1239,14 @@ def _functional_linearity_equalities(
         else:
             constant[0] += coeff * resolved
 
-    equalities: list[object] = []
+    equalities: list[MomentExpr] = []
     for gi, (g, trace_fn) in enumerate(((j, partial_trace_b2), (w_op, partial_trace_a0b2))):
         # Group the grid entries by their resolved SDP target: the variable
         # position for free moments, the canonical monomial for pinned or
         # vanishing constants (distinct pinned moments may share a VALUE
         # while carrying different functionals, so they must not be
         # merged).
-        groups: dict[object, dict[str, Any]] = {}
+        groups: dict[tuple[int, int] | tuple[str, Basic], _GroupRecord] = {}
         basis: list[np.ndarray] | None = None
         for u in row_words:
             mu_dag = word_matrix(u).T.conj()
@@ -1198,26 +1270,28 @@ def _functional_linearity_equalities(
                     )
         # Greedy pivots: every non-pivot group gets the relation
         # m_group = sum_a A_a m_pivot_a, exact in exact arithmetic.
-        pivot_keys: list[object] = []
+        pivot_keys: list[tuple[int, int] | tuple[str, Basic]] = []
         pivot_fvecs: list[np.ndarray] = []
-        relations: list[tuple[object, np.ndarray]] = []
-        for key, group in sorted(groups.items(), key=lambda item: str(item[0])):
+        relations: list[tuple[tuple[int, int] | tuple[str, Basic], np.ndarray]] = []
+        for group_key, group in sorted(groups.items(), key=lambda item: str(item[0])):
             fvec = group["f"]
             if pivot_fvecs:
                 stacked = np.array(pivot_fvecs).T
-                coeffs = np.linalg.lstsq(stacked, fvec, rcond=None)[0]
+                coeffs: np.ndarray = np.linalg.lstsq(stacked, fvec, rcond=None)[0]
                 if np.max(np.abs(stacked @ coeffs - fvec)) < 1e-8:
-                    relations.append((key, coeffs))
+                    relations.append((group_key, coeffs))
                     continue
-            pivot_keys.append(key)
+            pivot_keys.append(group_key)
             pivot_fvecs.append(fvec)
-        for key, coeffs in relations:
-            terms: list[object] = []
+        for relation_key, relation_coeffs in relations:
+            terms: list[MomentEntry] = []
             constant = [0.0]
-            push(groups[key]["resolved"], 1.0, terms, constant)
+            push(groups[relation_key]["resolved"], 1.0, terms, constant)
             # The coefficients align with the pivots chosen so far; pivots
             # added later do not participate in this relation.
-            for coeff, pivot_key in zip(coeffs, pivot_keys[: len(coeffs)], strict=True):
+            for coeff, pivot_key in zip(
+                relation_coeffs, pivot_keys[: len(relation_coeffs)], strict=True
+            ):
                 push(groups[pivot_key]["resolved"], -float(coeff), terms, constant)
             if not terms:
                 # Fully constant relation: a consistency check.
@@ -1235,11 +1309,11 @@ def _functional_linearity_equalities(
 
 def _completeness_equalities(
     problem: Problem,
-    data: dict[Any, Any],
-    localizing_basis: list[object],
+    data: _FactoredData,
+    localizing_basis: list[Expr],
     n_outputs: int,
-    resolver: Callable[[object], tuple[int, int] | float | None] | None = None,
-) -> list[object]:
+    resolver: Callable[[Basic], tuple[int, int] | float | None] | None = None,
+) -> list[MomentExpr]:
     """Linear moment equalities lifting the generator completeness
     relations into the inserted (J/W) blocks.
 
@@ -1266,12 +1340,14 @@ def _completeness_equalities(
     """
     operators = data["operators"]
     rhos, sigmas = operators[:4], operators[4:8]
-    relations: list[list[tuple[float, object]]] = [
+    relations: list[list[tuple[float, Expr | None]]] = [
         [(1.0, rhos[0]), (1.0, rhos[1]), (-1.0, None)],
         [(1.0, sigmas[0]), (1.0, sigmas[1]), (-1.0, None)],
     ]
     if n_outputs == 4:
-        relations.append([(1.0, v) for v in data["vs"]] + [(-1.0, None)])
+        vs_relation: list[tuple[float, Expr | None]] = [(1.0, v) for v in data["vs"]]
+        vs_relation.append((-1.0, None))
+        relations.append(vs_relation)
     return _linear_span_equalities(
         problem, data, localizing_basis, relations, "completeness", resolver=resolver
     )
@@ -1300,7 +1376,7 @@ def _pauli_word_coefficients() -> dict[tuple[int, int], np.ndarray]:
             product = mats[a] @ mats[b]
             if np.linalg.norm(product) < 1e-12:
                 continue  # the orthogonal pair (0, 1) is identically zero
-            c = np.linalg.lstsq(basis, product.reshape(-1), rcond=None)[0]
+            c: np.ndarray = np.linalg.lstsq(basis, product.reshape(-1), rcond=None)[0]
             residual = np.max(np.abs(basis @ c - product.reshape(-1)))
             if residual > 1e-9:
                 raise RuntimeError(f"no Pauli expansion for ({a}, {b}): residual {residual}")
@@ -1309,8 +1385,8 @@ def _pauli_word_coefficients() -> dict[tuple[int, int], np.ndarray]:
 
 
 def _pauli_relation_specs(
-    operators: list[object],
-) -> tuple[list[list[tuple[float, object]]], list[object]]:
+    operators: list[Expr],
+) -> tuple[list[list[tuple[float, Expr | None]]], list[Expr]]:
     """The anticommutator relations of the input projectors.
 
     The four input projectors form a complex basis of the 2x2 matrices, so
@@ -1334,23 +1410,23 @@ def _pauli_relation_specs(
     """
     mats = input_projectors()
     basis = np.stack([m.reshape(-1) for m in mats], axis=1)
-    specs: list[list[tuple[float, object]]] = []
-    extra_words: list[object] = []
+    specs: list[list[tuple[float, Expr | None]]] = []
+    extra_words: list[Expr] = []
     rhos, sigmas = operators[:4], operators[4:8]
     for x in range(4):
         for z in range(x + 1, 4):
             if {x, z} == {0, 1}:
                 continue  # orthogonal pair: the anticommutator vanishes
             anticommutator = mats[x] @ mats[z] + mats[z] @ mats[x]
-            a = np.linalg.lstsq(basis, anticommutator.reshape(-1), rcond=None)[0]
+            a: np.ndarray = np.linalg.lstsq(basis, anticommutator.reshape(-1), rcond=None)[0]
             residual = np.max(np.abs(basis @ a - anticommutator.reshape(-1)))
-            if residual > 1e-9 or np.max(np.abs(a.imag)) > 1e-9:
+            if residual > 1e-9 or np.max(np.abs(np.imag(a))) > 1e-9:
                 raise RuntimeError(
                     f"no real anticommutator relation for ({x}, {z}): residual {residual}"
                 )
-            a = np.round(a.real, 9)
+            a = np.round(np.real(a), 9)
             for gens in (rhos, sigmas):
-                spec: list[tuple[float, object]] = [
+                spec: list[tuple[float, Expr | None]] = [
                     (1.0, gens[x] * gens[z]),
                     (1.0, gens[z] * gens[x]),
                 ]
@@ -1363,11 +1439,11 @@ def _pauli_relation_specs(
 
 def _pauli_equalities(
     problem: Problem,
-    data: dict[Any, Any],
-    localizing_basis: list[object],
-    specs: list[list[tuple[float, object]]],
-    resolver: Callable[[object], tuple[int, int] | float | None] | None = None,
-) -> list[object]:
+    data: _FactoredData,
+    localizing_basis: list[Expr],
+    specs: list[list[tuple[float, Expr | None]]],
+    resolver: Callable[[Basic], tuple[int, int] | float | None] | None = None,
+) -> list[MomentExpr]:
     """Linear moment equalities lifting the Pauli-decomposition
     anticommutator relations into the inserted (J/W) blocks.
 
@@ -1389,11 +1465,11 @@ def _pauli_equalities(
 
 
 def _assemble_npa_tau_problem(
-    data: dict[Any, Any],
-    moments: dict[object, object],
-    momentequalities: list[object],
-    extras: list[object] | None,
-    localizing_basis: list[object] | None,
+    data: _FactoredData,
+    moments: dict[Basic, float],
+    momentequalities: list[MomentExpr],
+    extras: list[Expr] | None,
+    localizing_basis: list[Expr] | None,
 ) -> Problem:
     """Assemble the factored NPA ``Problem`` from its parts.
 
@@ -1458,9 +1534,9 @@ def _npa_tau_problem(
     """
     data = _factored_data(n_outputs)
     moments = _factored_moments(p, n_outputs)
-    momentequalities: list[object] = []
-    extras: list[object] | None = None
-    localizing_basis: list[object] | None = None
+    momentequalities: list[MomentExpr] = []
+    extras: list[Expr] | None = None
+    localizing_basis: list[Expr] | None = None
     if class_relations:
         momentequalities, extras, localizing_basis = _factored_classes(
             n_outputs, probes=probes, families=families

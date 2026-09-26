@@ -14,10 +14,13 @@ is exposed through the standard ``.sdp`` attribute for that route.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..monomial_sets import generate_monomial_sets
 from ..relaxation import NpaRelaxation
+
+if TYPE_CHECKING:  # NOTE: problem.py imports the relaxation lazily.
+    from ..problem import Problem
 
 
 class MoroderHierarchy(NpaRelaxation):
@@ -33,7 +36,7 @@ class MoroderHierarchy(NpaRelaxation):
 
     def __init__(
         self,
-        problem: Any,
+        problem: Problem,
         level: int,
         *,
         ppt: bool = False,

@@ -25,7 +25,7 @@ as ordinary :class:`~ncpolopt.problem.Problem` fields:
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from sympy import S
@@ -33,6 +33,9 @@ from sympy import S
 from ..moment import MomentEntry, MomentExpr
 from ..relaxation import NpaRelaxation
 from ..substitutions import apply_substitutions
+
+if TYPE_CHECKING:  # NOTE: problem.py imports the relaxation lazily.
+    from ..problem import Problem
 
 #: A functional-class key: the rounded real and imaginary parts of the
 #: flattened functional matrix ``G_{u,v} = trace_fn(v u^dagger)``.
@@ -113,7 +116,7 @@ def _class_key(matrix: np.ndarray, decimals: int) -> _FunctionalKey:
 
 
 def class_moment_equalities(
-    problem: Any,
+    problem: Problem,
     level: int,
     *,
     inserted: Sequence[tuple[Any, Callable[[np.ndarray], np.ndarray]]],
@@ -204,7 +207,7 @@ def class_moment_equalities(
                 f"No moment-matrix occurrence for monomial {monomial} "
                 f"(or its adjoint) at (row={row}, col={col}, g={g})."
             )
-        block, r, c = draft.sdp.column_locations[k]  # type: ignore
+        block, r, c = draft.sdp.column_locations[k]
         if block != block0:
             raise ValueError(
                 f"The variable of monomial {monomial} was created in "
