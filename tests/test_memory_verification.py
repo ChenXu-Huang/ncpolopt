@@ -314,11 +314,11 @@ def test_operator_relaxation_exact() -> None:
     pytest.importorskip("cvxpy")
     # Measured with CLARABEL/MOSEK: level 2 is exact to solver tolerance.
     for p in (0.3, 0.5, 0.75, 1.0):
-        value = common.operator_relaxation_value(p, n_outputs=1, level=2)
+        value = common.operator_relaxation_value(p, n_outputs=1, level=2, solver="CLARABEL")
         assert value == pytest.approx(p, abs=1e-4)
         assert value <= p + 1e-5
     # Level 1 stays on the wall (word-set poverty, not a solver issue).
-    value = common.operator_relaxation_value(0.5, n_outputs=1, level=1)
+    value = common.operator_relaxation_value(0.5, n_outputs=1, level=1, solver="CLARABEL")
     assert value == pytest.approx(1 / 3, abs=1e-4)
 
 
@@ -438,7 +438,9 @@ def _npa_tau_4out_value() -> float:
         "from common import npa_tau_relaxation_value\n"
         "print(npa_tau_relaxation_value(0.5, solver='mosek', n_outputs=4))"
     )
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=7200)
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=7200
+    )
     assert result.returncode == 0, f"4-output solve subprocess failed:\n{result.stderr[-2000:]}"
     return float(result.stdout.strip())
 
