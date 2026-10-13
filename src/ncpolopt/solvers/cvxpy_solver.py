@@ -68,7 +68,7 @@ def convert_to_cvxpy(problem: SdpProblem) -> cp.Problem:
     Raises:
         UnsupportedSdpError: If the problem has complex-valued blocks.
     """
-    from cvxpy import Minimize, Problem, Variable
+    from cvxpy import Constant, Minimize, Problem, Variable
 
     if any(block.coo.dtype == _COMPLEX_DTYPE for block in problem.blocks):
         raise UnsupportedSdpError(
@@ -99,10 +99,12 @@ def convert_to_cvxpy(problem: SdpProblem) -> cp.Problem:
                 for k in range(1, problem.n_vars + 1)
                 if np.count_nonzero(mats[k]) > 0
             ]
-            # NOTE: with no variable terms the constant stays the raw NumPy
-            # matrix (whose ``>>`` is a NumPy operator), so the accumulator
-            # cannot be typed as a CVXPY expression.
-            expression: Any = mats[0] + sum(terms)
+            if terms:
+                expression: Any = mats[0] + sum(terms)
+            else:
+                # A constant-only block: the raw NumPy matrix's ``>>`` is a
+                # bit-shift operator, so wrap it into a CVXPY constant.
+                expression = Constant(mats[0])
             constraints.append(expression >> 0)
         else:
             scalars = [0.0] * (problem.n_vars + 1)

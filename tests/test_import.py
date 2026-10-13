@@ -27,3 +27,23 @@ def test_setup_logging_is_idempotent() -> None:
     ncpolopt.setup_logging()
     ours = [h for h in root.handlers if getattr(h, "name", None) == "ncpolopt"]
     assert len(ours) == 1
+
+
+def test_import_does_not_load_solver_libraries() -> None:
+    """The lazy-import invariant: no solver library after import.
+
+    Runs in a subprocess so the measurement starts from a clean module
+    table (the test process itself has everything loaded).
+    """
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, ncpolopt; "
+        "leaked = [m for m in "
+        "('cvxpy', 'mosek', 'picos', 'cvxopt', 'clarabel', 'chompack') "
+        "if m in sys.modules]; "
+        "sys.exit(len(leaked))"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True)
+    assert result.returncode == 0, result.stderr.decode()

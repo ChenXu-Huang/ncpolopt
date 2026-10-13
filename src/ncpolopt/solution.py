@@ -159,24 +159,21 @@ class Solution:
             if is_number_type(monomial):
                 result.append((0, coeff))
                 continue
-            if monomial.as_coeff_Mul()[0].is_negative:
-                monomial = -monomial
-                coeff = -coeff
             substitute = self.sdp.moment_substitutions.get(monomial)
             if substitute is not None:
                 inner = self._index_of_monomial(substitute)
                 result += [(k, coeff * coeff3) for k, coeff3 in inner]
-                continue
-            k = self.sdp.monomial_index.get(monomial)
-            if k is None and not self._is_complex:
-                # Hermiticity turns symmetry into the conjugate's variable.
-                k = self.sdp.monomial_index.get(monomial.adjoint())
-            if k is None:
-                raise RuntimeError(
-                    f"The requested monomial {monomial} could not be found; "
-                    "its degree may exceed the relaxation level."
-                )
-            result.append((k, coeff))
+            else:
+                k = self.sdp.monomial_index.get(monomial)
+                if k is None and not self._is_complex:
+                    # Hermiticity turns symmetry into the conjugate's variable.
+                    k = self.sdp.monomial_index.get(monomial.adjoint())
+                if k is None:
+                    raise RuntimeError(
+                        f"The requested monomial {monomial} could not be found; "
+                        "its degree may exceed the relaxation level."
+                    )
+                result.append((k, coeff))
         return result
 
     def monomial_value(

@@ -90,3 +90,21 @@ def test_pick_monomials_by_degree() -> None:
 def test_unique_preserves_order() -> None:
     """Deduplication keeps first-occurrence order."""
     assert unique([1, 2, 1, 3, 2]) == [1, 2, 3]
+
+
+def test_get_monomials_empty_variables() -> None:
+    """No variables yields just the identity, even with a degree."""
+    from ncpolopt.monomials import get_monomials
+
+    assert get_monomials([], 1) == [S.One]
+    assert get_monomials([], 2) == [S.One]
+
+
+def test_get_monomials_includes_adjoint_words() -> None:
+    """Non-Hermitian variables bring their adjoints at every degree."""
+    from ncpolopt.monomials import get_monomials
+
+    A = generate_operators("A", 1, hermitian=False)[0]
+    basis = get_monomials([A], 2)
+    assert Dagger(A) * A in basis
+    assert A * Dagger(A) in basis

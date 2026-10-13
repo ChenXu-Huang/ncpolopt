@@ -9,7 +9,6 @@ ordinary arithmetic so constraints read naturally.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 
 
@@ -143,14 +142,6 @@ class MomentExpr:
 
     def __rmul__(self, other: object) -> MomentExpr:
         return self.__mul__(other)
-
-
-def combine_entries(entries: Iterable[MomentEntry | MomentExpr]) -> MomentExpr:
-    """Sum an iterable of entries or entry expressions into one expression."""
-    result = MomentExpr(())
-    for entry in entries:
-        result = result + entry
-    return result
 
 
 def as_moment_expr(value: MomentEntry | MomentExpr) -> MomentExpr:

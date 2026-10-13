@@ -65,7 +65,6 @@ try:
     __version__ = version("ncpolopt")
 except PackageNotFoundError:  # pragma: no cover - editable installs always provide it
     __version__ = "0.0.0"
-__version_tuple__ = tuple(map(int, __version__.split('.')))  # noqa: RUF048
 
 __all__ = [
     "MomentEntry",
@@ -80,7 +79,6 @@ __all__ = [
     "SolverSettings",
     "SteeringHierarchy",
     "__version__",
-    "__version_tuple__",
     "bosonic_constraints",
     "class_moment_equalities",
     "correlator",

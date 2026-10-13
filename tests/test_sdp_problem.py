@@ -158,3 +158,10 @@ def test_sparse_block_is_frozen() -> None:
     block = SparseBlock.__new__(SparseBlock)
     with pytest.raises(AttributeError):
         block.size = 3  # type: ignore[misc]
+
+
+def test_eliminate_equalities_without_variables() -> None:
+    """A constant-only equality system eliminates nothing."""
+    transform = eliminate_equalities(np.array([[1.0]]))
+    assert transform.n_free == 0
+    assert transform.basis.size == 0

@@ -98,12 +98,8 @@ def _localizing_basis(
             "level of relaxation."
         )
     localization_order = (2 * level - order) // 2
-    if level == -1:
-        localization_order = 0
     index = find_variable_set(variables, constraint)
     basis = pick_monomials_up_to_degree(monomial_sets[index], localization_order)
-    if len(basis) == 0:
-        basis = [S.One]
     return unique(basis)
 
 
@@ -160,8 +156,6 @@ class Relaxation(ABC):
         Raises:
             SolverError: If no solver backend is available.
         """
-        if self.sdp is None:
-            raise RuntimeError("The relaxation has not been built.")
         result = solve_problem(self.sdp, solver=solver, settings=settings)
         self.solution = Solution(self.sdp, result, self.moment_block_indices)
         return self.solution
@@ -238,6 +232,8 @@ class NpaRelaxation(Relaxation):
             if isinstance(item, MatrixBase):
                 # A matrix objective (steering) is complex if any entry is.
                 return any(iscomplex(entry) for entry in item)
+            if is_number_type(item):
+                return iscomplex(item)
             constraint = convert_relational(item) if item.is_Relational else item
             return iscomplex(constraint)
 
@@ -671,9 +667,6 @@ class NpaRelaxation(Relaxation):
             if is_number_type(monomial):
                 result.append((0, coeff))
                 continue
-            if monomial.as_coeff_Mul()[0] < 0:
-                monomial = -monomial
-                coeff = -1.0 * coeff
             substitute = self._moment_substitutions.get(monomial)
             if substitute is not None:
                 # NOTE: the old code looked the substitute value up again as
@@ -682,31 +675,31 @@ class NpaRelaxation(Relaxation):
                 # intended behavior.
                 inner = self._get_index_of_monomial(substitute, enablesubstitution)
                 result += [(k, coeff * coeff3) for k, coeff3 in inner]
-                continue
-            try:
-                k = self._builder.monomial_index[monomial]
-            except KeyError:
-                if daggered:
-                    raise RuntimeError(
-                        f"The requested monomial {monomial} could not be found; "
-                        "its degree may exceed the relaxation level."
-                    ) from None
-                if self.complex_matrix:
-                    # The adjoint's value is a conjugate, which is not
-                    # linear in the SDP variables; only real relaxations
-                    # may identify a missing monomial with its adjoint's
-                    # variable (mirrors _process_monomial/_resolve_position).
-                    raise RuntimeError(
-                        f"The requested monomial {monomial} is not an SDP "
-                        "variable, and its adjoint cannot stand in for it "
-                        "in a complex-valued relaxation."
-                    ) from None
-                dag_result = self._get_index_of_monomial(
-                    monomial.adjoint(), daggered=True
-                )
-                result += [(k, coeff0 * coeff) for k, coeff0 in dag_result]
             else:
-                result.append((k, coeff))
+                try:
+                    k = self._builder.monomial_index[monomial]
+                except KeyError:
+                    if daggered:
+                        raise RuntimeError(
+                            f"The requested monomial {monomial} could not be found; "
+                            "its degree may exceed the relaxation level."
+                        ) from None
+                    if self.complex_matrix:
+                        # The adjoint's value is a conjugate, which is not
+                        # linear in the SDP variables; only real relaxations
+                        # may identify a missing monomial with its adjoint's
+                        # variable (mirrors _process_monomial/_resolve_position).
+                        raise RuntimeError(
+                            f"The requested monomial {monomial} is not an SDP "
+                            "variable, and its adjoint cannot stand in for it "
+                            "in a complex-valued relaxation."
+                        ) from None
+                    dag_result = self._get_index_of_monomial(
+                        monomial.adjoint(), daggered=True
+                    )
+                    result += [(k, coeff0 * coeff) for k, coeff0 in dag_result]
+                else:
+                    result.append((k, coeff))
         return result
 
     def _push_facvar_sparse(
@@ -722,9 +715,9 @@ class NpaRelaxation(Relaxation):
         if is_number_type(polynomial):
             self._builder.add_entry(block, i, j, 0, polynomial)
             return
-        constant = constant_part(polynomial)
-        if constant != 0:
-            self._builder.add_entry(block, i, j, 0, constant)
+        # NOTE: the constant term of the float-normalized polynomial stays
+        # among the poly_elements terms and lands in the constant column
+        # through the loop below.
         for element in poly_elements(polynomial):
             for k, coeff in self._get_index_of_monomial(element):
                 if k > -1 and coeff != 0:

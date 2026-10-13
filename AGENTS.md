@@ -24,8 +24,8 @@ uv run ruff check .        # must stay clean
 
 Python 3.13+, uv build backend (`uv_build`), package metadata in
 `pyproject.toml`. Never add a dependency to the core set (numpy, scipy,
-sympy only) — solver bindings are optional extras (`cvxpy`, `mosek`,
-`cvxopt`, `chordal`) and must stay lazy.
+sympy only) — solver bindings are optional extras (`cvxpy`, `clarabel`,
+`mosek`, `cvxopt`, `chordal`, `all`) and must stay lazy.
 
 **All temporary content belongs in `temp/`.** Scratch scripts, throwaway
 reproductions, debug or profiler output, solver logs, generated data

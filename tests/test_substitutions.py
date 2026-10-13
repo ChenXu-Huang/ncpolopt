@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sympy import S, Symbol, expand
+from sympy import I, S, Symbol, expand
 from sympy.physics.quantum.dagger import Dagger
 
 from ncpolopt.substitutions import apply_substitutions, fast_substitute
@@ -233,3 +233,77 @@ def test_apply_substitutions_raises_on_nonconverging_rules() -> None:
             apply_substitutions(A, {A: A * B})
     finally:
         monkeypatch._MAX_SUBSTITUTION_PASSES = original
+
+
+def test_separate_scalar_factor_imaginary_and_plain() -> None:
+    """Imaginary units fold into the coefficient; plain numbers split off."""
+    from ncpolopt.substitutions import separate_scalar_factor
+
+    A = generate_operators("A", 1)[0]
+    monomial, coeff = separate_scalar_factor(2 * I * A)
+    assert monomial == A and coeff == 2j
+    monomial, coeff = separate_scalar_factor(3.5)
+    assert monomial == 1 and coeff == 3.5
+    monomial, coeff = separate_scalar_factor(-2 * A)
+    assert monomial == A and coeff == -2.0
+
+
+def test_separate_scalar_factor_exact_variant() -> None:
+    """_separate_scalar_factor splits a leading numeric factor exactly."""
+    from ncpolopt.substitutions import _separate_scalar_factor
+
+    A = generate_operators("A", 1)[0]
+    assert _separate_scalar_factor(2 * A) == (A, 2)
+    assert _separate_scalar_factor(A) == (A, 1)
+    assert _separate_scalar_factor(7) == (1, 7)
+
+
+def test_simplify_polynomial_number_passthrough() -> None:
+    """A numeric polynomial is returned as-is."""
+    from ncpolopt.substitutions import simplify_polynomial
+
+    assert simplify_polynomial(5, {}) == 5
+
+
+def test_apply_substitutions_pure_filters_irrelevant_rules() -> None:
+    """With pure=True, rules over foreign variables are dropped."""
+    A = generate_operators("A", 1)[0]
+    B = generate_operators("B", 1)[0]
+    assert apply_substitutions(A, {B: 1}, pure=True) == A
+    assert apply_substitutions(A, {A: B}, pure=True) == B
+
+
+def test_moment_of_entry_string_passthrough() -> None:
+    """A string constraint passes through unchanged (legacy marker path)."""
+    from ncpolopt.substitutions import moment_of_entry
+
+    assert moment_of_entry((1, 2), [S.One], "raw", {}) == (1, 2, "raw")
+
+
+def test_fast_substitute_mismatch_break_paths() -> None:
+    """Operator/Symbol/exponent mismatches skip to the next position."""
+    A = generate_operators("A", 1)[0]
+    B = generate_operators("B", 1)[0]
+    x = Symbol("x")
+    # Operator vs different operator: no fire.
+    assert fast_substitute(A, B, 1) == A
+    # Exponent too small for the pattern: no fire.
+    assert fast_substitute(A**2, A**3, 1) == A**2
+    # Symbol in the monomial never matches an operator pattern.
+    assert fast_substitute(x * A, x * B, 1) == x * A
+
+
+def test_simplify_polynomial_cancelling_expression() -> None:
+    """An expression cancelling to a number returns the number."""
+    from ncpolopt.substitutions import simplify_polynomial
+
+    A = generate_operators("A", 1)[0]
+    assert simplify_polynomial(A - A, {}) == 0
+
+
+def test_fast_substitute_symbol_mismatch_breaks() -> None:
+    """A noncommutative Symbol never matches a different pattern factor."""
+    A = generate_operators("A", 1)[0]
+    B = generate_operators("B", 1)[0]
+    s = Symbol("s", commutative=False)
+    assert fast_substitute(s * A, B, 1) == s * A

@@ -33,11 +33,13 @@ def verbosity_to_level(verbose: int) -> int:
 
     Args:
         verbose: 0 (warnings only), 1 (info) or 2 (debug). Higher values
-            are clamped to debug.
+            are clamped to debug, lower values to warnings.
 
     Returns:
         The matching ``logging`` level constant.
     """
+    if verbose <= 0:
+        return logging.WARNING
     return _LOG_LEVELS.get(verbose, logging.DEBUG)
 
 

@@ -210,3 +210,34 @@ def test_unembed_block_roundtrip() -> None:
     assert np.allclose(unembed_block(doubled, 2), x_part + 1j * y_part)
     # A real-sized matrix passes through unchanged.
     assert unembed_block(x_part, 2) is x_part
+
+
+def test_parse_solution_matrix_skips_non_brace_lines() -> None:
+    """Banner and continuation lines inside a matrix list are ignored."""
+    lines = [
+        "xMat =\n",
+        "some banner line\n",
+        "{\n",
+        "{{1.0},\n",
+        "{2.0}}\n",
+        "trailer\n",
+        "}\n",
+    ]
+    matrices = parse_solution_matrix(iter(lines))
+    assert len(matrices) == 1
+    assert np.allclose(matrices[0], [[1.0], [2.0]])
+
+
+def test_parse_solution_matrix_bare_closing_brace() -> None:
+    """A bare ``}`` closes a block whose last row did not."""
+    lines = [
+        "xMat =\n",
+        "{\n",
+        "{{1.0, 0.0},\n",
+        "{0.0, 1.0}\n",
+        "}\n",
+        "}\n",
+    ]
+    matrices = parse_solution_matrix(iter(lines))
+    assert len(matrices) == 1
+    assert np.allclose(matrices[0], np.eye(2))

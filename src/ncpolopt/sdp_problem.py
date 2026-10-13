@@ -155,11 +155,6 @@ class SdpBuilder:
         """The current number of SDP variables."""
         return self._n_vars
 
-    @property
-    def dtype(self) -> np.dtype[Any]:
-        """The dtype of the coefficient data (float or complex)."""
-        return self._dtype
-
     def new_variable(
         self, monomial: Any | None, block: int, i: int, j: int
     ) -> int:

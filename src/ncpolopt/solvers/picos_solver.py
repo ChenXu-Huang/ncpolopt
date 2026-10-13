@@ -228,7 +228,12 @@ def solve_with_picos(problem: SdpProblem, settings: SolverSettings) -> SolverRes
     status = _STATUS_MAP.get(picos_status, picos_status)
     locations = [problem.column_locations[k] for k in range(1, problem.n_vars + 1)]
     try:
-        x = np.array([model.moment.value[i0, j0] for _, i0, j0 in locations])
+        moment_value = model.moment.value
+        # PICOS leaves the value None (or raises NotValued) when the model
+        # has no solution values to read.
+        if moment_value is None:
+            raise pic.NotValued
+        x = np.array([moment_value[i0, j0] for _, i0, j0 in locations])
         y_mat = tuple(
             np.atleast_2d(np.asarray(P.get_constraint(i).dual))
             for i in range(len(P.constraints))

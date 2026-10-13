@@ -166,7 +166,9 @@ def _dual_blocks(sdp: SdpProblem, z: np.ndarray) -> tuple[np.ndarray, ...]:
     entries as-is, off-diagonal entries divided by sqrt(2), mirrored), so
     that ``tr(Y_b @ A0_b) = z_b . b_b`` block by block. The sqrt(2) factor
     is what CVXPY/CLARABEL put onto off-diagonal svec entries to preserve
-    the trace inner product, so undoing it is a division.
+    the trace inner product, so undoing it is a division. The two segments
+    of ``z`` are addressed independently: the scalar rows sit in the NonNeg
+    prefix, the PSD triangles start after it.
 
     Args:
         sdp: The frozen SDP problem.
@@ -176,20 +178,21 @@ def _dual_blocks(sdp: SdpProblem, z: np.ndarray) -> tuple[np.ndarray, ...]:
         One dual matrix per SDP block, aligned with ``sdp.blocks``.
     """
     y_mat: list[np.ndarray] = []
-    offset = 0
+    scalar_offset = 0
+    psd_offset = sum(1 for block in sdp.blocks if block.size == 1)
     for block in sdp.blocks:
         size = block.size
         if size == 1:
-            y_mat.append(np.array([[z[offset]]]))
-            offset += 1
+            y_mat.append(np.array([[z[scalar_offset]]]))
+            scalar_offset += 1
             continue
         y = np.zeros((size, size))
         for r in range(size):
             for c in range(r + 1):
                 scale = 1.0 if r == c else math.sqrt(2.0)
-                y[r, c] = z[offset + _svec_index(r, c)] / scale
+                y[r, c] = z[psd_offset + _svec_index(r, c)] / scale
                 y[c, r] = y[r, c]
-        offset += size * (size + 1) // 2
+        psd_offset += size * (size + 1) // 2
         y_mat.append(y)
     return tuple(y_mat)
 
@@ -240,6 +243,16 @@ def solve_with_clarabel(problem: SdpProblem, settings: SolverSettings) -> Solver
     solution_time = time.monotonic() - tstart
     sol = solver.get_solution()
     status = _STATUS_MAP.get(str(sol.status), str(sol.status))
+    if status != "optimal":
+        # CLARABEL returns its last iterate even on failure; like the CVXPY
+        # backend's None guard, report no values rather than garbage.
+        return SolverResult(
+            status=status,
+            primal=float("nan"),
+            dual=float("nan"),
+            solution_time=solution_time,
+            raw=sol,
+        )
     x = np.asarray(sol.x, dtype=float)
     x_mat = block_matrices(problem, x)
     y_mat = _dual_blocks(problem, np.asarray(sol.z, dtype=float))

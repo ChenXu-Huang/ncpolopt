@@ -24,6 +24,7 @@ no longer exists.
 
 from __future__ import annotations
 
+import numbers
 import sys
 import time
 from typing import Any
@@ -67,7 +68,7 @@ def _set_parameter(task: Any, name: str, value: Any) -> None:
     import mosek
 
     if name.startswith("mosek."):
-        name = name[7:]
+        name = name[len("mosek."):]
     namespace: Any
     putter_name: str
     if name.startswith("iparam."):
@@ -76,9 +77,9 @@ def _set_parameter(task: Any, name: str, value: Any) -> None:
         name, namespace, putter_name = name[7:], mosek.dparam, "putdouparam"
     elif name.startswith("sparam."):
         name, namespace, putter_name = name[7:], mosek.sparam, "putstrparam"
-    elif isinstance(value, int):
+    elif isinstance(value, numbers.Integral):
         namespace, putter_name = mosek.iparam, "putintparam"
-    elif isinstance(value, float):
+    elif isinstance(value, numbers.Real):
         namespace, putter_name = mosek.dparam, "putdouparam"
     elif isinstance(value, str):
         namespace, putter_name = mosek.sparam, "putstrparam"
@@ -225,6 +226,17 @@ def solve_with_mosek(problem: SdpProblem, settings: SolverSettings) -> SolverRes
         )
         if hasattr(mosek.solsta, name)
     }.get(task.getsolsta(mosek.soltype.itr), "unknown")
+    if status != "optimal":
+        # The solution slots hold certificate data on infeasible/unbounded
+        # statuses, not a primal/dual pair; report no values, mirroring the
+        # CVXPY backend's None guard.
+        return SolverResult(
+            status=status,
+            primal=float("nan"),
+            dual=float("nan"),
+            solution_time=solution_time,
+            raw=task,
+        )
     # MOSEK 10+ requires the solution selector on gety.
     x = np.asarray(task.gety(mosek.soltype.itr))
     x_mat = block_matrices(problem, x)

@@ -477,3 +477,87 @@ def test_rdm_circulant_applies_substitutions() -> None:
     # unreduced degree-4 word must not get its own variable.
     assert X[1] ** 2 in sdp.monomial_index
     assert X[0] * X[0] * X[1] * X[1] not in sdp.monomial_index
+
+
+def test_rdm_non_circulant_passthrough() -> None:
+    """Without circulant=True the hierarchy is the standard NPA build."""
+    X = generate_operators("x", 2, hermitian=True)
+    relaxation = RdmHierarchy(Problem(X, objective=X[0]), 1)
+    assert relaxation.sdp.blocks[0].size == 3
+
+
+def test_rdm_circulant_degree_three_raises() -> None:
+    """The circulant layout only handles degree-1 and degree-2 bases."""
+    X = generate_operators("x", 3, hermitian=True)
+    cubes = [X[i] * X[j] * X[k] for i in range(3) for j in range(3) for k in range(3)]
+    with pytest.raises(ValueError, match="degree-3"):
+        RdmHierarchy(Problem(X, normalized=False, extramonomials=[cubes]), -1, circulant=True)
+
+
+def test_rdm_circulant_two_band_needs_even_square() -> None:
+    """The two-band layout validates its 2*N**2 basis shape."""
+    X = generate_operators("x", 3, hermitian=True)
+    # A square (3^2) but not 2*N**2 basis drives block 2 into the error.
+    products = [X[i] * X[j] for i in range(3) for j in range(3)]
+    problem = Problem(
+        [X, X], normalized=False, extramonomials=[products, products]
+    )
+    with pytest.raises(ValueError, match="2\\*N\\*\\*2"):
+        RdmHierarchy(problem, -1, circulant=True)
+
+
+def test_steering_matrix_var_dim_validation() -> None:
+    """matrix_var_dim must be a positive integer."""
+    X = generate_operators("x", 2, hermitian=True)
+    problem = Problem(X, normalized=False, complex_matrix=True)
+    with pytest.raises(ValueError, match="positive integer"):
+        SteeringHierarchy(problem, 1, matrix_var_dim=0)
+
+
+def test_steering_objective_shape_validation() -> None:
+    """The objective matrix must match matrix_var_dim."""
+    X = generate_operators("x", 2, hermitian=True)
+    problem = Problem(
+        X, objective=Matrix([[1]]), normalized=False, complex_matrix=True
+    )
+    with pytest.raises(ValueError, match="2x2 matrix"):
+        SteeringHierarchy(problem, 1, matrix_var_dim=2)
+
+
+def test_moroder_ppt_without_swaps() -> None:
+    """A 1x1 rectangular basis has nothing to transpose; ppt is a no-op."""
+    x = generate_operators("x", 1, hermitian=True)[0]
+    y = generate_operators("y", 1, hermitian=True)[0]
+    problem = Problem(
+        [[x], [y]],
+        normalized=False,
+        extramonomials=[[x], [y]],
+        extramomentmatrices=[["ppt"]],
+    )
+    relaxation = MoroderHierarchy(problem, -1)
+    assert [block.size for block in relaxation.sdp.blocks] == [1, 1]
+
+
+def test_steering_moment_substitution_constant() -> None:
+    """A moment pinned to a constant writes no group, only a constant entry."""
+    X = generate_operators("x", 2, hermitian=True)
+    problem = Problem(
+        X,
+        normalized=False,
+        complex_matrix=True,
+        momentsubstitutions={X[0] ** 2: 2.0},
+    )
+    sdp = SteeringHierarchy(problem, 1, matrix_var_dim=2).sdp
+    assert X[0] ** 2 not in sdp.monomial_index
+
+
+def test_rdm_circulant_falls_back_beyond_third_block() -> None:
+    """The fourth moment block onward uses the standard square layout."""
+    x, y, z, w = (generate_operators(c, 1, hermitian=True)[0] for c in "xyzw")
+    problem = Problem(
+        [[x], [y], [z], [w]],
+        normalized=False,
+        extramonomials=[[x * x], [y * y, y], [z * z], [w * w]],
+    )
+    relaxation = RdmHierarchy(problem, -1, circulant=True)
+    assert len(relaxation.sdp.blocks) == 4

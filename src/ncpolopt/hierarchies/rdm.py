@@ -132,8 +132,9 @@ class RdmHierarchy(NpaRelaxation):
         grid of basis sub-blocks; each diagonal sub-block contributes its
         upper triangle, each off-diagonal sub-block its complete region
         (the old ``generate_block_coords`` coords plus their transposed
-        partners, which fill the local-lower positions). The remaining
-        entries are deliberately zero -- that is the RDM band structure.
+        partners, which fill the local-lower positions). The grid covers
+        the full upper triangle over the given basis; the RDM band
+        structure comes from the choice of the basis itself.
 
         Args:
             monomials: The square basis of the block.

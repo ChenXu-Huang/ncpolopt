@@ -99,3 +99,104 @@ def test_marginal_rejects_bad_indices() -> None:
         P([0], [-1], "A")
     with pytest.raises(ValueError, match="party index"):
         P([0], [0], [5])
+
+
+def test_pauli_constraints() -> None:
+    """The Pauli rule set: squares, on-site anticommutation, cross-site commutation."""
+    from ncpolopt.physics import pauli_constraints
+    from ncpolopt.substitutions import apply_substitutions
+
+    X = generate_operators("X", 2, hermitian=True)
+    Y = generate_operators("Y", 2, hermitian=True)
+    Z = generate_operators("Z", 2, hermitian=True)
+    substitutions = pauli_constraints(X, Y, Z)
+    # 6 rules per site (squares + anticommutation) plus 9 per site pair.
+    assert len(substitutions) == 2 * 6 + 9
+    assert apply_substitutions(X[0] * X[0], substitutions) == 1
+    assert apply_substitutions(Y[0] * X[0], substitutions) == -X[0] * Y[0]
+    assert apply_substitutions(Z[0] * Y[0], substitutions) == -Y[0] * Z[0]
+    assert apply_substitutions(X[1] * X[0], substitutions) == X[0] * X[1]
+    assert apply_substitutions(Z[0] * X[1], substitutions) == X[1] * Z[0]
+
+
+def test_correlator_binary() -> None:
+    """The binary correlator is (A0 - A1)(B0 - B1)."""
+    from ncpolopt.physics import correlator
+
+    A = [generate_operators("A", 2, hermitian=True)]
+    B = [generate_operators("B", 2, hermitian=True)]
+    [[corr]] = correlator(A, B)
+    expected = (A[0][0] - A[0][1]) * (B[0][0] - B[0][1])
+    from sympy import expand
+
+    assert expand(corr - expected) == 0
+
+
+def test_get_neighbors_2d_and_periodic() -> None:
+    """Corner/edge/periodic branches of the lattice neighbor walk."""
+    # 3x3 lattice, top-left corner: right and down.
+    assert get_neighbors(0, 3) == [1, 3]
+    # Right edge: only down.
+    assert get_neighbors(2, 3) == [5]
+    # Bottom-right corner: nothing.
+    assert get_neighbors(8, 3) == []
+    # Periodic right edge wraps to the row start; bottom row wraps to top.
+    assert get_neighbors(2, 3, periodic=True) == [0, 5]
+    assert get_neighbors(7, 3, periodic=True) == [8, 1]
+    # Non-square 2x4 lattice visited row-wise.
+    assert get_neighbors(5, 2, width=4) == [6]
+
+
+def test_get_next_neighbors() -> None:
+    """Distance-2 neighbors exclude the nearer sites."""
+    from ncpolopt.physics import get_next_neighbors
+
+    # distance 1 matches get_neighbors exactly.
+    assert get_next_neighbors(0, 3) == get_neighbors(0, 3)
+    # 3x3 open lattice from the corner: distance-2 sites are 2, 4, 6.
+    assert set(get_next_neighbors(0, 3, distance=2)) == {2, 4, 6}
+    # Multiple seeds (forward neighbors only, so corner 8 has none).
+    assert set(get_next_neighbors([0, 2], 3, distance=1)) == {1, 3, 5}
+
+
+def test_define_objective_with_I_argument_forms() -> None:
+    """The (A, B) and Probability forms agree; bad arity raises."""
+    from ncpolopt.physics import define_objective_with_I
+
+    # CHSH in Collins-Gisin form.
+    I_matrix = [[0, 0, 0], [0, 1, 1], [0, 1, -1]]
+    P = Probability([2, 2], [2, 2])
+    via_probability = define_objective_with_I(I_matrix, P)
+    via_lists = define_objective_with_I(I_matrix, P.parties[0], P.parties[1])
+    from sympy import expand
+
+    assert expand(via_probability - via_lists) == 0
+    with pytest.raises(ValueError, match="two parties"):
+        define_objective_with_I(I_matrix, P.parties[0], P.parties[1], P.parties[0])
+    with pytest.raises(ValueError, match="two parties"):
+        define_objective_with_I(I_matrix)
+
+
+def test_probability_labels_and_extra_monomials() -> None:
+    """Custom labels name the operators; a wrong label count raises."""
+    with pytest.raises(ValueError, match="Incorrect number of labels"):
+        Probability([2, 2], [2, 2], labels=["A"])
+    P = Probability([2], [2], labels=["X", "Y"])
+    X0 = P.parties[0][0][0]
+    assert str(X0) == "X0"
+    # No party named: no extra monomials.
+    assert P.get_extra_monomials() == []
+    assert P.get_extra_monomials("X")  # one party's worth
+
+
+def test_probability_call_validation() -> None:
+    """Inconsistent calls raise before indexing anything."""
+    P = Probability([2, 2], [2, 2])
+    with pytest.raises(ValueError, match="does not match the number of outputs"):
+        P([0, 1], [0])
+    with pytest.raises(ValueError, match="exceeds the number of parties"):
+        P([0, 0, 0], [0, 0, 0])
+    with pytest.raises(ValueError, match="without defining which"):
+        P([0], [0])
+    with pytest.raises(ValueError, match="does not match"):
+        P([0], [0], ["A", "B"])

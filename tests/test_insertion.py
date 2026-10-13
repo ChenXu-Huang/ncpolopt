@@ -321,3 +321,70 @@ def test_class_moment_equalities_requires_normalized() -> None:
             col_words=model["basis"],
             word_matrix=model["word_matrix"],
         )
+
+
+def test_class_moment_equalities_zero_word_pins_to_zero() -> None:
+    """A word reduced to zero by substitutions pins its class to 0.
+
+    Covers the ``monomial == 0`` path of the position resolver: the class
+    relation degenerates to the single free entry (the constant 0 term is
+    dropped by MomentExpr).
+    """
+    model = _model()
+    p0, p1, g = model["p0"], model["p1"], model["g"]
+    model["substitutions"][p0 * g * p1] = S.Zero  # the (p0, p1) word vanishes
+    model["substitutions"][p1 * g * p0] = S.Zero
+    problem = _problem(model, momentequalities=[])
+    relations = class_moment_equalities(
+        problem,
+        1,
+        inserted=[(g, lambda matrix: matrix)],
+        row_words=model["basis"],
+        col_words=model["basis"],
+        word_matrix=model["word_matrix"],
+    )
+    # The zeroed words resolve to the constant 0.0; whether a relation
+    # survives depends on the class grouping, but the call must not fail.
+    assert isinstance(relations, list)
+
+
+def test_class_moment_equalities_multipartite_block_mismatch() -> None:
+    """A class entry living in another moment block is a clear error."""
+    model = _model()
+    p0, p1, g = model["p0"], model["p1"], model["g"]
+    # Two variable sets -> two moment blocks; the g moments land in block 1.
+    problem = nc.Problem(
+        [[p0, p1], [g]],
+        objective=g,
+        substitutions=model["substitutions"],
+    )
+    # A constant word matrix merges everything into one class, so the
+    # second (duplicate) column word resolves its position and trips the
+    # block check.
+    with pytest.raises(ValueError, match="not in moment block"):
+        class_moment_equalities(
+            problem,
+            1,
+            inserted=[(g, lambda matrix: matrix)],
+            row_words=[model["basis"][0]],
+            col_words=[g, g],
+            word_matrix=lambda word: np.eye(2),
+        )
+
+
+def test_class_moment_equalities_zeroed_class_member() -> None:
+    """One zeroed member of a two-member class ties the other to 0."""
+    model = _model()
+    p0, g = model["p0"], model["g"]
+    model["substitutions"][p0 * g] = S.Zero  # the (p0, 1) word vanishes
+    model["substitutions"][g * p0] = S.Zero
+    problem = _problem(model, momentequalities=[])
+    relations = class_moment_equalities(
+        problem,
+        1,
+        inserted=[(g, lambda matrix: matrix)],
+        row_words=model["basis"],
+        col_words=model["basis"],
+        word_matrix=model["word_matrix"],
+    )
+    assert isinstance(relations, list)

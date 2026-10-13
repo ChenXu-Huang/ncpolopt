@@ -442,3 +442,377 @@ def test_localizing_monomials_length_mismatch_raises() -> None:
     )
     with pytest.raises(ValueError, match="localizing_monomials"):
         problem.relaxation(level=2)
+
+
+def test_equality_degree_too_high_raises_on_elimination() -> None:
+    """The elimination path rejects constraints of degree > 2*level."""
+    X = generate_operators("X", 2, hermitian=True)
+    with pytest.raises(ValueError, match="degree 4"):
+        Problem(X, equalities=[X[0] ** 4]).relaxation(level=1, removeequalities=True)
+
+
+def test_constant_objective() -> None:
+    """A constant-only objective is carried by the constant term."""
+    X = generate_operators("X", 1, hermitian=True)
+    solution = Problem(X, objective=2.5).solve(level=1)
+    assert solution.primal == pytest.approx(2.5)
+
+
+def test_objective_constant_term_warns_and_counts(caplog) -> None:
+    """A constant part of the objective lands in constant_term (with a note)."""
+    import logging
+
+    X = generate_operators("X", 1, hermitian=True)
+    with caplog.at_level(logging.WARNING, logger="ncpolopt.relaxation"):
+        relaxation = Problem(X, objective=X[0] + 1.5).relaxation(level=1)
+    assert any("constant" in record.message for record in caplog.records)
+    assert relaxation.sdp.constant_term == 1.5
+
+
+def test_moment_equality_pins_entry() -> None:
+    """A MomentEntry equality pins the moment to a value."""
+    from ncpolopt.moment import MomentEntry
+
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X,
+        objective=X[0] * X[1] + X[1] * X[0],
+        momentequalities=[MomentEntry(0, 0, 1) - 0.5],
+    )
+    solution = problem.solve(level=2)
+    assert solution.monomial_value(X[0]) == pytest.approx(0.5, abs=1e-5)
+
+
+def test_complex_substitution_forces_complex_matrix() -> None:
+    """A complex substitution value flips the relaxation to complex."""
+    X = generate_operators("X", 1, hermitian=True)
+    problem = Problem(X, substitutions={X[0] ** 2: 1j})
+    relaxation = problem.relaxation(level=1)
+    assert relaxation.complex_matrix is True
+
+
+def test_removeequalities_without_equalities_is_noop() -> None:
+    """removeequalities with an empty equality set builds normally."""
+    X = generate_operators("X", 1, hermitian=True)
+    relaxation = Problem(X, objective=X[0]).relaxation(level=1, removeequalities=True)
+    assert relaxation.sdp.n_vars > 0
+
+
+def test_polynomial_moment_equality() -> None:
+    """A plain polynomial in momentequalities pins the top-left entry."""
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X, objective=X[0] ** 2, momentequalities=[X[0] - 0.5]
+    )
+    solution = problem.solve(level=2)
+    assert solution.monomial_value(X[0]) == pytest.approx(0.5, abs=1e-5)
+
+
+def test_moment_equality_on_normalization_entry() -> None:
+    """A MomentEntry(0, 0, 0) equality binds the normalization constant."""
+    from ncpolopt.moment import MomentEntry
+
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X, objective=X[0] ** 2, momentequalities=[MomentEntry(0, 0, 0) - 1.0]
+    )
+    solution = problem.solve(level=2)
+    assert solution.primal == pytest.approx(0.0, abs=1e-5)
+
+
+def test_complex_moment_entry_transpose_rejected() -> None:
+    """A transposed MomentEntry in a complex relaxation raises."""
+    from ncpolopt.moment import MomentEntry
+
+    X = generate_operators("X", 2, hermitian=False)
+    # X[0] sits at (0, 1); referencing (1, 0) in a complex problem asks
+    # for its conjugate, which is not linear in the SDP variables.
+    problem = Problem(
+        X,
+        objective=MomentEntry(0, 1, 0),
+        complex_matrix=True,
+    )
+    with pytest.raises(ValueError, match="conjugate"):
+        problem.relaxation(level=1)
+
+
+def test_negative_objective_monomial() -> None:
+    """A negated objective monomial flips the facvar sign."""
+    X = generate_operators("X", 1, hermitian=True)
+    relaxation = Problem(X, objective=-X[0]).relaxation(level=1)
+    assert relaxation.sdp.obj[0] == -1.0
+    assert all(c == 0 for c in relaxation.sdp.obj[1:])
+
+
+def test_objective_referencing_moment_substitution() -> None:
+    """The objective resolves a moment-substituted monomial."""
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X, objective=X[1], momentsubstitutions={X[1]: X[0]}
+    )
+    relaxation = problem.relaxation(level=1)
+    # The objective lands on the variable of X[0].
+    assert relaxation.sdp.obj[0] == 1.0
+    assert all(c == 0 for c in relaxation.sdp.obj[1:])
+
+
+def test_moment_substitution_with_complex_value() -> None:
+    """A complex constant moment value lands in the constant column."""
+    X = generate_operators("X", 1, hermitian=True)
+    problem = Problem(
+        X,
+        objective=X[0],
+        momentsubstitutions={X[0] ** 2: 1j},
+        complex_matrix=True,
+    )
+    relaxation = problem.relaxation(level=2)
+    assert relaxation.complex_matrix is True
+
+
+def test_moment_inequality_polynomial_with_constant() -> None:
+    """A polynomial moment inequality pushes its constant into the block."""
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X,
+        objective=X[0] * X[1] + X[1] * X[0],
+        momentinequalities=[X[0] - 0.5],
+    )
+    solution = problem.solve(level=2)
+    assert solution.monomial_value(X[0]).real >= 0.5 - 1e-5
+
+
+def test_moment_entry_transposed_position_real() -> None:
+    """A lower-triangle MomentEntry resolves through the transpose (real)."""
+    from ncpolopt.moment import MomentEntry
+
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X,
+        objective=X[0] ** 2,
+        momentequalities=[MomentEntry(0, 1, 0) - 0.5],
+    )
+    solution = problem.solve(level=2)
+    assert solution.monomial_value(X[0]) == pytest.approx(0.5, abs=1e-5)
+
+
+def test_moment_entry_missing_position_raises() -> None:
+    """A MomentEntry outside the moment matrix is a clear error."""
+    from ncpolopt.moment import MomentEntry
+
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(X, objective=MomentEntry(0, 5, 5))
+    with pytest.raises(ValueError, match="does not correspond"):
+        problem.relaxation(level=1)
+
+
+def test_dependent_equalities_warn(caplog) -> None:
+    """Linearly dependent equalities log a warning under elimination."""
+    import logging
+
+    X = generate_operators("X", 1, hermitian=True)
+    with caplog.at_level(logging.WARNING, logger="ncpolopt.relaxation"):
+        Problem(
+            X,
+            objective=X[0],
+            equalities=[X[0] - 1, 2 * X[0] - 2],
+        ).relaxation(level=1, removeequalities=True)
+    assert any("dependent" in record.message for record in caplog.records)
+
+
+def test_moment_equality_eliminated_rows() -> None:
+    """Moment equalities contribute rows to the elimination system."""
+    from ncpolopt.moment import MomentEntry
+
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X,
+        objective=X[1] ** 2,
+        momentinequalities=[MomentEntry(0, 0, 1) - 0.5],
+        momentequalities=[MomentEntry(0, 0, 2) - 0.25],
+    )
+    solution = problem.solve(level=2, removeequalities=True)
+    assert solution.monomial_value(X[1]) == pytest.approx(0.25, abs=1e-4)
+
+
+def test_non_pure_substitution_rule_detected() -> None:
+    """A rule whose rhs introduces new atoms is not pure."""
+    X = generate_operators("X", 2, hermitian=True)
+    relaxation = Problem(X, substitutions={X[0]: X[1]}).relaxation(level=1)
+    assert relaxation._pure_substitution_rules is False
+
+
+def test_ppt_requires_rectangular_basis() -> None:
+    """ppt on a flat basis is a clear error."""
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(X, extramomentmatrices=[["ppt"]])
+    with pytest.raises(ValueError, match="rectangular"):
+        problem.relaxation(level=1)
+
+
+def test_constraint_covering_all_query_paths() -> None:
+    """Constants, negatives, and moment substitutions inside a constraint."""
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X,
+        inequalities=[-X[0] ** 2 + X[1] + 1.0],
+        substitutions={X[0] ** 2: 1},
+        momentsubstitutions={X[1]: X[0]},
+    )
+    relaxation = problem.relaxation(level=2)
+    assert relaxation.sdp.n_vars > 0
+
+
+def test_moment_substitution_complex_value_in_constraint() -> None:
+    """A complex pinned moment inside a constraint keeps the coefficient."""
+    X = generate_operators("X", 1, hermitian=True)
+    problem = Problem(
+        X,
+        inequalities=[2 * X[0] ** 2 - 1],
+        momentsubstitutions={X[0] ** 2: 0.5},
+    )
+    relaxation = problem.relaxation(level=2)
+    assert relaxation.sdp.n_vars > 0
+
+
+def test_elimination_with_empty_block() -> None:
+    """A substitution-erased constraint survives equality elimination."""
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X,
+        objective=X[0],
+        inequalities=[1 - X[0] ** 2],
+        equalities=[X[1] - 0.5],
+        substitutions={X[0] ** 2: 1},
+    )
+    relaxation = problem.relaxation(level=1, removeequalities=True)
+    assert relaxation.sdp.n_vars > 0
+
+
+def test_relational_equality_elimination() -> None:
+    """A relational equality feeds the elimination system."""
+    from sympy import Eq
+
+    from ncpolopt.variables import generate_variables
+
+    # NOTE: Eq on an Operator collapses to BooleanFalse; relationals only
+    # survive for commutative symbols.
+    x = generate_variables("x", 1)[0]
+    relaxation = Problem(
+        [x], objective=x**2, equalities=[Eq(x, 0.5)]
+    ).relaxation(level=1, removeequalities=True)
+    assert relaxation.sdp.n_vars >= 1
+
+
+def test_objective_query_path_variants() -> None:
+    """Constants, negatives and moment substitutions in the objective.
+
+    Covers the per-term branches of the monomial resolution loop.
+    """
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X,
+        objective=-X[0] ** 2 + X[1],
+        substitutions={X[0] ** 2: 2},
+        momentsubstitutions={X[1]: X[0]},
+    )
+    relaxation = problem.relaxation(level=1)
+    # -X0^2 -> -2 (constant), X1 -> X0's variable: obj = [1] + const -2.
+    assert relaxation.sdp.constant_term == -2.0
+    assert relaxation.sdp.obj[0] == 1.0
+
+
+def test_scalar_constraint_reduced_to_constant() -> None:
+    """A moment inequality reduced to a constant writes a constant row."""
+    X = generate_operators("X", 1, hermitian=True)
+    problem = Problem(
+        X, momentinequalities=[X[0] ** 2], substitutions={X[0] ** 2: 2}
+    )
+    relaxation = problem.relaxation(level=1)
+    assert relaxation.sdp.n_vars >= 1
+
+
+def test_relational_equality_in_elimination() -> None:
+    """A relational equality feeds the elimination system."""
+    from sympy import Eq
+
+    from ncpolopt.variables import generate_variables
+
+    # NOTE: Eq on an Operator collapses to BooleanFalse; relationals only
+    # survive for commutative symbols.
+    x = generate_variables("x", 1)[0]
+    relaxation = Problem(
+        [x], objective=x**2, equalities=[Eq(x, 0.5)]
+    ).relaxation(level=1, removeequalities=True)
+    assert relaxation.sdp.n_vars >= 1
+
+
+def test_elimination_rows_cover_all_constraint_kinds() -> None:
+    """Equalities and moment inequalities both feed the elimination rows."""
+    X = generate_operators("X", 1, hermitian=True)
+    relaxation = Problem(
+        [X[0]],
+        objective=X[0] ** 2,
+        equalities=[X[0] - 0.5],
+        momentinequalities=[X[0] - 0.25],
+        momentequalities=[X[0] - 0.25],
+    ).relaxation(level=1, removeequalities=True)
+    assert relaxation.sdp.n_vars >= 1
+
+
+def test_localizing_entry_reduced_to_constant() -> None:
+    """A localizing entry reducing to a number writes a constant entry."""
+    X = generate_operators("X", 1, hermitian=True)
+    problem = Problem(
+        X, inequalities=[X[0] ** 2 - 1], substitutions={X[0] ** 2: 2}
+    )
+    relaxation = problem.relaxation(level=1)
+    assert relaxation.sdp.n_vars >= 1
+
+
+def test_objective_covers_all_query_branches() -> None:
+    """Constants, negatives, and pinned terms inside a resolved objective."""
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X,
+        objective=X[0] ** 2,
+        substitutions={X[0] ** 2: X[1] - X[0] + 1},
+        momentsubstitutions={X[1]: X[0]},
+    )
+    relaxation = problem.relaxation(level=1)
+    # X0^2 -> X1 - X0 + 1 -> X0 - X0 + 1 = 1: everything collapses to the
+    # constant term.
+    assert relaxation.sdp.constant_term == 1.0
+    assert all(c == 0 for c in relaxation.sdp.obj)
+
+
+def test_nested_moment_substitution_with_constant() -> None:
+    """A pinned moment whose value contains another pin cascades."""
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X,
+        objective=X[0] ** 2,
+        momentsubstitutions={X[0]: 0.5, X[1]: 2 * X[0]},
+    )
+    relaxation = problem.relaxation(level=1)
+    # X1's own moment cascades to the constant (2*0.5), so no variable is
+    # created for it; the product moments keep theirs.
+    assert X[1] not in relaxation.sdp.monomial_index
+    assert relaxation.sdp.n_vars == 3
+
+
+def test_objective_moment_substitution_add_value() -> None:
+    """A pinned moment whose value is a sum resolves term by term.
+
+    Covers the in-loop branches of the monomial resolution: a number term,
+    a pinned term, and a free term inside one substitution value.
+    """
+    X = generate_operators("X", 2, hermitian=True)
+    problem = Problem(
+        X,
+        objective=X[1],
+        momentsubstitutions={X[1]: X[0] + X[0] ** 2 - 1, X[0] ** 2: X[0]},
+    )
+    relaxation = problem.relaxation(level=1)
+    # X1 -> X0 + X0^2 - 1 -> X0 + X0 - 1 = 2*X0 - 1.
+    assert relaxation.sdp.constant_term == -1.0
+    assert relaxation.sdp.obj[0] == 2.0

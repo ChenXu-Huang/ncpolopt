@@ -137,3 +137,40 @@ def test_dual_blocks_unscale_offdiagonals() -> None:
     assert len(reference.y_mat) == len(result.y_mat)
     for ref_block, block in zip(reference.y_mat, result.y_mat, strict=True):
         assert np.allclose(block, ref_block, atol=1e-5)
+
+
+def test_dual_blocks_align_when_scalar_blocks_follow_psd() -> None:
+    """Scalar and PSD segments of z are addressed independently.
+
+    Regression: a single offset walked both segments, so a PSD block before
+    scalar blocks misaligned every dual (problems with equalities reported
+    garbage duals on this backend).
+    """
+    X = nc.generate_operators("x", 1, hermitian=True)
+    problem = nc.Problem(X, objective=X[0] ** 2, equalities=[X[0] - 0.5])
+    reference = problem.solve(1, solver="cvxpy")
+    result = problem.solve(1, solver="clarabel")
+    assert result.status == "optimal"
+    assert result.primal == pytest.approx(0.25, abs=1e-6)
+    assert result.dual == pytest.approx(reference.dual, abs=1e-5)
+
+
+def test_empty_scalar_block_gets_dummy_row() -> None:
+    """A constraint reduced to a constant maps to the trivial b = +1 row.
+
+    Regression coverage: substitutions can erase every entry of a scalar
+    inequality block; the CVXPY path turns it into a trivially true row,
+    and this backend mirrors that artifact.
+    """
+    X = nc.generate_operators("x", 1, hermitian=True)
+    problem = nc.Problem(
+        X,
+        objective=X[0] ** 2,
+        inequalities=[1 - X[0] ** 2],
+        substitutions={X[0] ** 2: 1},
+    )
+    reference = problem.solve(1, solver="cvxpy")
+    result = problem.solve(1, solver="clarabel")
+    assert result.status == "optimal"
+    assert result.primal == pytest.approx(reference.primal, abs=1e-6)
+    assert result.dual == pytest.approx(reference.dual, abs=1e-4)

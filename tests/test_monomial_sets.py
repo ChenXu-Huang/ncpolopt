@@ -85,3 +85,16 @@ def test_estimate_n_vars_rectangular_block() -> None:
     """
     a = generate_operators("a", 3)
     assert estimate_n_vars([[a[:2], a]], None, False) == 6 * 7 // 2
+
+
+def test_generate_monomial_sets_multipartite_with_extras() -> None:
+    """Each variable set pairs with its own extra monomials."""
+    from ncpolopt.monomial_sets import generate_monomial_sets
+
+    X = generate_operators("x", 1, hermitian=True)
+    Y = generate_operators("y", 1, hermitian=True)
+    sets = generate_monomial_sets(
+        [[X[0]], [Y[0]]], 1, [[Y[0] ** 2], [X[0] ** 2]], {}
+    )
+    assert sets[0] == [S.One, X[0], Y[0] ** 2]
+    assert sets[1] == [S.One, Y[0], X[0] ** 2]

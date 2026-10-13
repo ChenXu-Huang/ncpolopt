@@ -250,3 +250,60 @@ def test_multipartite_constraint_uses_matching_basis() -> None:
     assert structure.blocks[2].size == 3
     # The level-2 basis of ``b`` (not ``a``) provides the localizing set.
     assert structure.blocks[2].localizing_set == (S.One, b[0], b[1])
+
+
+def test_constraint_starting_block_without_constraints() -> None:
+    """With no constraint blocks the index is past the last block."""
+    x = generate_variables("x", 1)[0]
+    structure = _structure(
+        variables=[x], level=1, monomial_sets=[[S.One, x]]
+    )
+    assert structure.constraint_starting_block == len(structure.blocks)
+
+
+def test_localizing_basis_at_level_minus_one() -> None:
+    """Level -1 pins the localization order to the trivial basis (and warns)."""
+    x = generate_variables("x", 1)[0]
+    structure = _structure(
+        variables=[x],
+        level=-1,
+        monomial_sets=[[S.One, x]],
+        inequalities=[x**2],
+    )
+    kinds = [block.kind for block in structure.blocks]
+    assert BlockKind.LOCALIZING in kinds
+    assert any("degree" in warning for warning in structure.warnings)
+
+
+def test_constraint_starting_block_with_constraints() -> None:
+    """The property finds the first constraint block after the moment block."""
+    x = generate_variables("x", 1)[0]
+    structure = _structure(
+        variables=[x], level=1, monomial_sets=[[S.One, x]], inequalities=[x]
+    )
+    assert structure.constraint_starting_block == 1
+
+
+def test_oversized_constraint_gets_trivial_basis() -> None:
+    """A constraint exceeding 2*level keeps the trivial basis (and warns)."""
+    x = generate_variables("x", 1)[0]
+    structure = _structure(
+        variables=[x], level=1, monomial_sets=[[S.One, x]], inequalities=[x**4]
+    )
+    localizing = [b for b in structure.blocks if b.kind is BlockKind.LOCALIZING]
+    assert localizing[0].localizing_set == (S.One,)
+    assert any("degree 4" in warning for warning in structure.warnings)
+
+
+def test_relational_equality_maps_both_forms() -> None:
+    """An equality given as a relational maps under both representations."""
+    from sympy import Eq
+
+    x = generate_variables("x", 1)[0]
+    structure = _structure(
+        variables=[x],
+        level=1,
+        monomial_sets=[[S.One, x]],
+        equalities=[Eq(x, 1)],
+    )
+    assert len(structure.constraint_to_blocks) == 2  # converted + raw keys

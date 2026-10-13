@@ -6,6 +6,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- CLARABEL backend: the dual reconstruction walked the NonNeg prefix and
+  the PSD svec segments of CLARABEL's `z` with a single offset, so any
+  problem with scalar blocks (equalities, moment constraints) following
+  the moment block got completely misaligned dual matrices; the segments
+  are now addressed independently (regression test in
+  `test_clarabel_solver.py`).
+- MOSEK backend: parameter names prefixed `mosek.` were mangled by a
+  wrong strip length; type inference accepts NumPy scalar values
+  (`numbers.Integral`/`Real`); infeasible/unbounded statuses report NaN
+  values instead of reading the certificate as if it were a solution.
+- CLARABEL backend: non-optimal statuses report NaN values instead of the
+  last iterate.
+- CVXPY backend: a constant-only PSD block (possible when substitutions
+  erase a constraint's entries) is wrapped in a CVXPY constant instead of
+  hitting NumPy's `>>` bit-shift.
+- `__version_tuple__` parses prerelease suffixes (`0.2.2rc1`) instead of
+  raising `ValueError`.
+
+### Changed
+
+- `verbosity_to_level` clamps negative values to WARNING (they previously
+  fell through to DEBUG).
+
+### Documentation
+
+- Corrected the `Probability` example output, the `get_next_neighbors`
+  distance claim, the `maximum_violation` return-value wording, the
+  `correlator` full-output requirement, the RDM band-structure wording,
+  and the AGENTS.md extras list.
+
+### Testing
+
+- The lazy-import invariant (`import ncpolopt` must not import solver
+  libraries) is now guarded by a subprocess test.
+- Coverage of the package (`src/ncpolopt`) is now 100%: the CLI, the
+  physics helpers (`pauli_constraints`, `correlator`, `get_next_neighbors`,
+  `Probability` marginals, `define_objective_with_I`), the moment-entry
+  arithmetic, the SDPA subprocess path (mock binary), and the solver error
+  paths all carry tests now.
+- Removed dead code: `SdpBuilder.dtype`, `moment.combine_entries`, and two
+  unreachable branches in `relaxation.py`.
+
 ## [0.2.2] — 2026-10-13
 
 ### Fixed

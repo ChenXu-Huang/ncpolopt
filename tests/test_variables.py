@@ -76,3 +76,29 @@ def test_find_variable_set() -> None:
     assert find_variable_set([a, b], b[0] + b[1]) == 1
     assert find_variable_set([a, b], a[0] * b[0]) == -1
     assert find_variable_set(a, a[0]) == 0
+
+
+def test_generate_variables_complex_and_noncommutative() -> None:
+    """hermitian=False gives complex symbols; noncommutative gives operators."""
+    complex_vars = generate_variables("z", 2, hermitian=False)
+    assert all(v.is_commutative and v.is_complex for v in complex_vars)
+    ops = generate_variables("A", 2, commutative=False)
+    assert all(isinstance(v, Operator) and not v.is_commutative for v in ops)
+    ops_h = generate_variables("H", 1, commutative=False, hermitian=True)
+    assert isinstance(ops_h[0], HermitianOperator)
+
+
+def test_get_support_adjoints_and_powers() -> None:
+    """Adjoints count on their base; powers count with multiplicity."""
+    A, B = generate_operators("A", 1)[0], generate_operators("B", 1)[0]
+    assert get_support([A, B], Dagger(A) ** 2 * B) == [[2, 1]]
+    # A constant has empty support; an unknown variable raises.
+    assert get_support([A, B], 5) == [[0, 0]]
+
+
+def test_get_support_variables_unwraps_adjoints_and_powers() -> None:
+    """Adjoints and adjointed powers resolve to their base variables."""
+    A, B = generate_operators("A", 1)[0], generate_operators("B", 1)[0]
+    assert get_support_variables(Dagger(A) ** 2 * B) == [A, B]
+    assert get_support_variables(Dagger(A)) == [A]
+    assert get_support_variables(5) == []

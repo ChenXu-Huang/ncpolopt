@@ -66,9 +66,9 @@ def get_next_neighbors(
 ) -> list[int]:
     """The forward neighbors of a site at a given distance.
 
-    Each step moves to the forward neighbors of the current frontier; sites
-    reachable in fewer steps are excluded, so a site at distance d is never
-    reported as its own distance-d neighbor on a periodic lattice.
+    Each step moves to the forward neighbors of the current frontier; only
+    the sites at exactly distance ``distance - 1`` are excluded, so on small
+    periodic lattices a site can reappear as its own distance-d neighbor.
 
     Args:
         indices: Linear index or list of indices of the sites.
@@ -315,7 +315,10 @@ def correlator(A: list[list[Any]], B: list[list[Any]]) -> list[list[Any]]:
     """The correlator matrix of two parties' measurement operators.
 
     The correlator of output lists ``(k, l)`` contributes +1 when the
-    outputs coincide and -1 otherwise.
+    outputs coincide and -1 otherwise. Pass the FULL output lists: with the
+    Collins-Gisin-reduced lists of :func:`generate_measurements` (last
+    output dropped) the two-output correlator is only the ``A0*B0`` part
+    of the intended ``(A0 - A1)(B0 - B1)``.
 
     Args:
         A: The measurements of Alice.
@@ -368,7 +371,8 @@ def maximum_violation(
         settings: Backend knobs.
 
     Returns:
-        The primal and dual optimal values.
+        The primal and dual optimal values of the flipped (minimization)
+        objective, i.e. the negative of the maximum violation.
     """
     P = Probability(A_configuration, B_configuration)
     objective = define_objective_with_I(I_matrix, P)
@@ -390,8 +394,8 @@ class Probability:
     call the instance to obtain probabilities in the p(ab...|xy...) notation:
 
         >>> P = Probability([2, 2], [2, 2])
-        >>> P([1, 0], [0, 1])  # p(10|01)
-        E0_0*E1_1
+        >>> P([1, 0], [0, 1])  # p(10|01): Alice's complement, Bob's B1
+        (1 - A0)*B1
 
     The operators of the last output of each measurement are not generated:
     the Collins-Gisin picture recovers them on call as the identity minus
