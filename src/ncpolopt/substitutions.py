@@ -307,8 +307,18 @@ def fast_substitute(monomial: Any, old_sub: Any, new_sub: Any) -> Any:
                             comm_monomial = new_monomial
                 else:
                     comm_monomial = comm_monomial.subs(comm_old_sub, comm_new_sub)
-    if ncomm_factors == () or old_ncomm_factors == ():
+    if ncomm_factors == ():
         return comm_monomial
+    if old_ncomm_factors == ():
+        # A purely commutative rule must not swallow the noncommutative
+        # tail of the monomial: apply the commutative substitution and
+        # reattach the untouched factors.
+        new_monomial = comm_monomial
+        for factor in ncomm_factors:
+            new_monomial *= factor
+        if not isinstance(new_sub, (float, int, complex)) and new_sub.is_Add:
+            return expand(new_monomial)
+        return new_monomial
 
     new_var_list: list[Any] = []
     new_monomial = 1

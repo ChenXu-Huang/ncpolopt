@@ -163,8 +163,10 @@ def _dual_blocks(sdp: SdpProblem, z: np.ndarray) -> tuple[np.ndarray, ...]:
 
     The NonNeg prefix of ``z`` holds one dual per scalar block; each PSD
     block's scaled-svec segment unscales to a symmetric matrix (diagonal
-    entries as-is, off-diagonal entries times sqrt(2), mirrored), so that
-    ``tr(Y_b @ A0_b) = z_b . b_b`` block by block.
+    entries as-is, off-diagonal entries divided by sqrt(2), mirrored), so
+    that ``tr(Y_b @ A0_b) = z_b . b_b`` block by block. The sqrt(2) factor
+    is what CVXPY/CLARABEL put onto off-diagonal svec entries to preserve
+    the trace inner product, so undoing it is a division.
 
     Args:
         sdp: The frozen SDP problem.
@@ -185,7 +187,7 @@ def _dual_blocks(sdp: SdpProblem, z: np.ndarray) -> tuple[np.ndarray, ...]:
         for r in range(size):
             for c in range(r + 1):
                 scale = 1.0 if r == c else math.sqrt(2.0)
-                y[r, c] = scale * z[offset + _svec_index(r, c)]
+                y[r, c] = z[offset + _svec_index(r, c)] / scale
                 y[c, r] = y[r, c]
         offset += size * (size + 1) // 2
         y_mat.append(y)
@@ -240,10 +242,6 @@ def solve_with_clarabel(problem: SdpProblem, settings: SolverSettings) -> Solver
     status = _STATUS_MAP.get(str(sol.status), str(sol.status))
     x = np.asarray(sol.x, dtype=float)
     x_mat = block_matrices(problem, x)
-    # TODO(ChenXu): validate the dual reconstruction: the reported dual
-    # value has been observed orders of magnitude away from the primal
-    # value on certified-optimal runs, so _dual_blocks (or dual_value
-    # over it) is likely wrong for this backend.
     y_mat = _dual_blocks(problem, np.asarray(sol.z, dtype=float))
     return SolverResult(
         status=status,

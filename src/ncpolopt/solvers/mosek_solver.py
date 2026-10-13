@@ -228,10 +228,12 @@ def solve_with_mosek(problem: SdpProblem, settings: SolverSettings) -> SolverRes
     # MOSEK 10+ requires the solution selector on gety.
     x = np.asarray(task.gety(mosek.soltype.itr))
     x_mat = block_matrices(problem, x)
-    # TODO(ChenXu): the y_mat slot holds MOSEK's primal bar matrices
-    # (getbarxj), not the canonical dual matrices, so the dual value
-    # computed over them is meaningless (observed far from the primal
-    # value). Extract the true dual or stop reporting it on this backend.
+    # NOTE: MOSEK's primal bar matrices (getbarxj) are exactly the
+    # canonical dual matrices Y_b of this construction: the stationarity
+    # <-A_k, X> = -c_k is equivalent to sum_b <A_k,b, Y_b> = c_k, and gety
+    # returns the primal variables. An earlier TODO here doubted the
+    # convention; the observed dual/primal mismatch came from the
+    # unsymmetrized constant matrix in dual_value, not from getbarxj.
     y_mat = tuple(
         _lower_triangle_to_dense(
             task.getbarxj(mosek.soltype.itr, block_index), block.size

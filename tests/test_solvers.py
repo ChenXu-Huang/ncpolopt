@@ -108,3 +108,39 @@ def test_mosek_parameter_errors_are_solver_errors() -> None:
         pytest.skip("MOSEK refuses to create a task without a license")
     with pytest.raises(SolverError, match="No MOSEK parameter"):
         _set_parameter(task, "iparam.MSK_IPAR_NO_SUCH_PARAM", 1)
+
+
+def _offdiagonal_constant_problem() -> Problem:
+    """A relaxation whose moment block carries an off-diagonal constant.
+
+    The substitutions pin X*X, X*Y and Y*X to 1, so the (X, Y) entry of
+    the moment matrix is the constant 1, stored once in the upper triangle.
+    """
+    X = generate_operators("X", 1, hermitian=True)[0]
+    Y = generate_operators("Y", 1, hermitian=True)[0]
+    return Problem(
+        variables=[X, Y],
+        objective=-X + Y * Y,
+        substitutions={X * X: 1, X * Y: 1, Y * X: 1},
+    )
+
+
+def test_dual_value_pairs_offdiagonal_constants_fully(
+    solver_kind: SolverKind,
+) -> None:
+    """Reported duals use the full symmetric constant matrix.
+
+    Regression: dual_value paired Y with the stored upper triangle of A0
+    only, halving every off-diagonal constant contribution (the dual of
+    this problem came out at -1.0 instead of the primal value 0.0).
+    """
+    if solver_kind is SolverKind.CVXOPT:
+        pytest.skip("numbers are not asserted on the cvxopt/PICOS path")
+    solution = _offdiagonal_constant_problem().solve(1, solver=solver_kind)
+    assert solution.status == "optimal"
+    assert solution.primal == pytest.approx(0.0, abs=1e-5)
+    assert solution.dual == pytest.approx(solution.primal, abs=1e-4)
+    # Canonical stationarity pairing for X (objective coefficient -1):
+    # -tr(Y @ A_X) = -c_X = 1; the upper-triangle-only pairing gave 0.5.
+    X = generate_operators("X", 1, hermitian=True)[0]
+    assert solution.dual_value(X) == pytest.approx(1.0, abs=1e-4)

@@ -348,3 +348,21 @@ def test_solve_without_backend_raises() -> None:
     else:
         with pytest.raises(SolverError, match="No solver backend"):
             relaxation.solve()
+
+
+def test_complex_relaxation_rejects_adjoint_only_monomial() -> None:
+    """A complex relaxation must not borrow the adjoint's SDP variable.
+
+    Regression: the conjugate fallback in _get_index_of_monomial ignored
+    complex_matrix and mapped a missing monomial onto its adjoint's
+    variable without conjugation (not a linear operation), silently
+    cancelling the term -- the constraint below degenerated to 1 >= 0.
+    """
+    A = generate_operators("A", 1, hermitian=False)[0]
+    problem = Problem(
+        [A],
+        inequalities=[S.ImaginaryUnit * A**2 - S.ImaginaryUnit * Dagger(A) ** 2 + 1],
+        complex_matrix=True,
+    )
+    with pytest.raises(RuntimeError, match="adjoint"):
+        problem.relaxation(level=1)

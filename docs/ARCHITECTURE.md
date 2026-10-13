@@ -208,7 +208,7 @@ more, mirrored for CLARABEL's convention `b - A x in K`:
   `q = obj` as-is, `A` carries the negated coefficient rows (package
   data-dict convention: coefficients negated, constants not) and `b`
   carries the constant offsets. The dual blocks unscale from the svec
-  segments of CLARABEL's `z` (off-diagonal entries times `sqrt(2)`).
+  segments of CLARABEL's `z` (off-diagonal entries divided by `sqrt(2)`).
 - Solver statuses map through a small table (`"Solved"` /
   `"AlmostSolved"` -> `"optimal"`, mirroring the CVXPY backend's
   `optimal_inaccurate` folding).

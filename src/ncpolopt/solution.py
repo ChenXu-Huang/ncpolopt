@@ -152,10 +152,7 @@ class Solution:
         )
         if is_number_type(processed_element):
             return [(0, coeff1)]
-        if processed_element.is_Add:
-            monomials = processed_element.args
-        else:
-            monomials = [processed_element]
+        monomials = processed_element.args if processed_element.is_Add else [processed_element]
         for monomial in monomials:
             monomial, coeff2 = separate_scalar_factor(monomial)
             coeff = coeff1 * coeff2
@@ -246,13 +243,20 @@ class Solution:
         for block in block_indices:
             coo = self.sdp.blocks[block].coo
             size = self.sdp.blocks[block].size
+            y_block = y_mat[block]
             for k, position, value in zip(
                 coo.row, coo.col, coo.data, strict=True
             ):
                 if int(k) != index:
                     continue
                 row, column = divmod(int(position), size)
-                result += -value * y_mat[block][row, column]
+                # The COO stores the upper triangle; the full pairing
+                # tr(Y @ A_k) pairs the stored entry with Y[column, row]
+                # and its Hermitian mirror with Y[row, column].
+                term = value * y_block[column, row]
+                if row != column:
+                    term += np.conj(value) * y_block[row, column]
+                result -= term
         return result
 
     def dual_block(self, block: int) -> np.ndarray:
@@ -306,7 +310,7 @@ class Solution:
                 if val < -0.001:
                     raise RuntimeError(
                         f"Large negative eigenvalue {val}; the dual matrix "
-                        "of block {block} cannot be positive."
+                        f"of block {block} cannot be positive."
                     )
                 if val > 0:
                     sub_term = 0

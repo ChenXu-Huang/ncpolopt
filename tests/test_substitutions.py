@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from sympy import S, expand
+from sympy import S, Symbol, expand
 from sympy.physics.quantum.dagger import Dagger
 
 from ncpolopt.substitutions import apply_substitutions, fast_substitute
@@ -163,3 +163,35 @@ def test_apply_substitutions_fermionic_chain() -> None:
     substituted = sum(apply_substitutions(m, substitutions) for m in monomials)
     reference = sum(_sympy_fixpoint(m, substitutions) for m in monomials)
     assert substituted == expand(reference)
+
+
+def test_pure_commutative_rule_keeps_noncommutative_tail() -> None:
+    """A rule with no noncommutative factors must not swallow them.
+
+    Regression: the early return for a commutative-only rule dropped the
+    noncommutative tail of the monomial (``fast_substitute(A*B, x, 2)``
+    returned ``1``), silently collapsing mixed classical/operator problems.
+    """
+    A = generate_operators("A", 1)[0]
+    B = generate_operators("B", 1)[0]
+    x = Symbol("x")
+    assert fast_substitute(A * B, x, 2) == A * B
+    assert fast_substitute(x * A, x, 2) == 2 * A
+    assert fast_substitute(x**2 * A * B, x**2, 1) == A * B
+    y = Symbol("y")
+    assert expand(fast_substitute(x * A, x, y + 1) - (y * A + A)) == 0
+    assert apply_substitutions(x * A, {x: 2}) == 2 * A
+
+
+def test_pure_commutative_rule_end_to_end() -> None:
+    """A commutative substitution no longer collapses the moment basis."""
+    from ncpolopt.problem import Problem
+    from ncpolopt.variables import generate_variables
+
+    x = generate_variables("x", 1)[0]
+    A = generate_operators("A", 1)[0]
+    problem = Problem([x, A], objective=x * A, substitutions={x: 1})
+    relaxation = problem.relaxation(level=1)
+    assert relaxation.monomial_sets == [[S.One, A, Dagger(A)]]
+    # The objective x*A reduces to A: coefficient 1.0 on its moment.
+    assert list(relaxation.sdp.obj) == [1.0, 0.0, 0.0, 0.0]

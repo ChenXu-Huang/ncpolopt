@@ -110,6 +110,42 @@ def test_eliminate_pure_constant_equality_is_identity() -> None:
     assert np.allclose(transform.shift, [1.0, 0.0, 0.0])
 
 
+def test_eliminate_dependent_row_before_independent_row() -> None:
+    """A dependent row before an independent one must not overshoot the rank.
+
+    Regression: the old ``last nonzero row + 1`` heuristic counted three
+    fixed directions for this system and silently pinned the genuinely
+    free variable x2, making the SDP stronger than the problem.
+    """
+    # x1 = 1, 2*x1 = 2 (dependent duplicate), x3 = 3; x2 stays free.
+    A = np.array(
+        [
+            [-1.0, 1.0, 0.0, 0.0],
+            [-2.0, 2.0, 0.0, 0.0],
+            [-3.0, 0.0, 0.0, 1.0],
+        ]
+    )
+    transform = eliminate_equalities(A)
+    assert transform.dependent_rows
+    assert transform.n_free == 1
+    assert np.allclose(transform.shift, [1.0, 1.0, 0.0, 3.0])
+    assert np.allclose(np.abs(transform.basis[:, 0]), [0.0, 1.0, 0.0])
+
+
+def test_constant_matrix_is_symmetrized() -> None:
+    """constant_matrix returns the full symmetric A0, not the stored triangle.
+
+    Regression: the dual pairing tr(Y @ A0) counted off-diagonal constant
+    entries only once because constant_matrix returned the stored upper
+    triangle (the dual came out at half strength on such problems).
+    """
+    builder = SdpBuilder([2], normalized=True, complex_matrix=False)
+    builder.add_entry(0, 0, 0, 0, 1.0)
+    builder.add_entry(0, 0, 1, 0, 2.0)  # off-diagonal constant, stored once
+    (block,) = builder.freeze(1, {}, ()).blocks
+    assert np.allclose(block.constant_matrix(), [[1.0, 2.0], [2.0, 0.0]])
+
+
 def test_basis_transform_is_frozen() -> None:
     """BasisTransform is immutable."""
     transform = BasisTransform(np.eye(2), np.array([1.0, 0.0, 0.0]))

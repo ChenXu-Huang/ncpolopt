@@ -227,31 +227,22 @@ def find_variable_cliques(
         raise ValueError(
             "There is nothing to extract the chordal structure from!"
         )
-    if method == "fill":
-        pattern = _fill_pattern(
-            variables,
-            objective,
-            inequalities,
-            equalities,
-            momentinequalities,
-            momentequalities,
+    if method not in ("fill", "chompack"):
+        raise ValueError(
+            f"Unknown chordal completion method {method!r}; expected 'fill' or 'chompack'."
         )
+    pattern = _fill_pattern(
+        variables,
+        objective,
+        inequalities,
+        equalities,
+        momentinequalities,
+        momentequalities,
+    )
+    if method == "fill":
         clique_set = _clique_set_from_cholesky(pattern)
     elif method == "chompack":
-        pattern = _fill_pattern(
-            variables,
-            objective,
-            inequalities,
-            equalities,
-            momentinequalities,
-            momentequalities,
-        )
         clique_set = _clique_set_from_chompack(pattern)
-    else:
-        raise ValueError(
-            f"Unknown chordal completion method {method!r}; expected "
-            f"'fill' or 'chompack'."
-        )
     return [
         [variables[i] for i in np.nonzero(clique)[0]] for clique in clique_set
     ]

@@ -11,13 +11,14 @@ from __future__ import annotations
 import argparse
 import platform
 import sys
+from typing import NoReturn
 
 from . import __version__
 from ._logging import setup_logging
 from .solvers.registry import available_solvers
 
 
-def main() -> None:
+def main() -> NoReturn:
     """Run the CLI: report version, platform and available solvers."""
     assert __doc__ is not None
     parser = argparse.ArgumentParser(prog="ncpolopt", description=__doc__.splitlines()[0])

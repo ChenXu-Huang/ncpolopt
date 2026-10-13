@@ -41,11 +41,16 @@ class SparseBlock:
     size: int
 
     def constant_matrix(self) -> np.ndarray:
-        """Return the constant matrix A0 of the block."""
+        """Return the constant matrix A0 of the block, symmetrized.
+
+        Construction stores only the upper triangle; the full matrix is the
+        Hermitian mirror image (the plain transpose for real blocks).
+        """
         # NOTE: SciPy types ``shape`` as optional although a constructed
         # sparse array always carries one.
         n_variables = cast("tuple[int, ...]", self.coo.shape)[0] - 1
-        return self.evaluate(np.zeros(n_variables))
+        mat = self.evaluate(np.zeros(n_variables))
+        return mat + mat.conj().T - np.diag(np.diag(mat))
 
     def evaluate(self, x: np.ndarray) -> np.ndarray:
         """Evaluate the block matrix at the primal solution ``x``.

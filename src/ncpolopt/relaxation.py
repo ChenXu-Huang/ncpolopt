@@ -663,6 +663,16 @@ class NpaRelaxation(Relaxation):
                         f"The requested monomial {monomial} could not be found; "
                         "its degree may exceed the relaxation level."
                     ) from None
+                if self.complex_matrix:
+                    # The adjoint's value is a conjugate, which is not
+                    # linear in the SDP variables; only real relaxations
+                    # may identify a missing monomial with its adjoint's
+                    # variable (mirrors _process_monomial/_resolve_position).
+                    raise RuntimeError(
+                        f"The requested monomial {monomial} is not an SDP "
+                        "variable, and its adjoint cannot stand in for it "
+                        "in a complex-valued relaxation."
+                    ) from None
                 dag_result = self._get_index_of_monomial(
                     monomial.adjoint(), daggered=True
                 )

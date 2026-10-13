@@ -65,12 +65,21 @@ def eliminate_equalities(A: np.ndarray) -> BasisTransform:
     if n_vars == 0:
         return BasisTransform(np.empty((0, 0)), np.ones(1), A.shape[0], 0)
     Q, R = np.linalg.qr(A[:, 1:].T, mode="complete")
-    # The first n rows of R are the linearly independent part. The old code
-    # computed n from the nonzero-row count, which is exact in exact
-    # arithmetic but sensitive to floating-point noise; the count is kept
-    # because it agrees with the rank in practice.
-    nonzero_rows = np.nonzero(np.sum(np.abs(R), axis=1) > 0)[0]
-    n = nonzero_rows[-1] + 1 if nonzero_rows.size else 0
+    # The nonzero rows of R identify the fixed directions: A[:, 1:] =
+    # (QR).T involves only the Q columns of nonzero R rows, and those rows
+    # of the unpivoted trapezoidal R are linearly independent, so their
+    # count equals the rank. The old code took ``last nonzero row + 1``,
+    # which overshoots the rank whenever a dependent row precedes an
+    # independent one (e.g. a duplicated equality) and silently pinned
+    # genuinely free variables.
+    row_norms = np.sum(np.abs(R), axis=1)
+    tol = (
+        np.finfo(float).eps
+        * max(R.shape)
+        * (float(row_norms.max()) if row_norms.size else 0.0)
+    )
+    fixed_rows = np.nonzero(row_norms > tol)[0]
+    n = len(fixed_rows)
     if n == 0:
         # No variable participates in the equalities (e.g. a pure constant
         # moment equality): nothing to eliminate.
@@ -79,9 +88,10 @@ def eliminate_equalities(A: np.ndarray) -> BasisTransform:
     # Solve the reduced system in the least-squares sense: dependent rows
     # make the system overdetermined, and lstsq handles both cases where the
     # old np.linalg.solve would crash (non-square or singular).
-    z = np.linalg.lstsq(R[:n, :].T, -A[:, 0], rcond=None)[0]
-    x = Q[:, :n].dot(z)
-    basis = np.array(Q[:, n:], copy=True)
+    z = np.linalg.lstsq(R[fixed_rows, :].T, -A[:, 0], rcond=None)[0]
+    x = Q[:, fixed_rows].dot(z)
+    free_cols = np.delete(np.arange(n_vars), fixed_rows)
+    basis = np.array(Q[:, free_cols], copy=True)
     # The sign of a free basis column is arbitrary (the free variable is
     # unconstrained); make it canonical so two runs produce identical SDPs.
     for j in range(basis.shape[1]):

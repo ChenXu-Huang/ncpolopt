@@ -6,6 +6,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Dual value convention: `dual_value` paired the dual matrices with the
+  unsymmetrized (upper-triangle-only) constant matrix, counting every
+  off-diagonal constant entry at half weight — the reported dual of
+  problems with off-diagonal block constants (substitution-pinned moments,
+  `momentsubstitutions`, equality-elimination shifts) was simply wrong.
+  `SparseBlock.constant_matrix()` now returns the full symmetric matrix;
+  `Solution.dual_value` mirrors the stored entries the same way, so the
+  per-monomial dual pairing `-tr(Y @ A_k)` is exact for off-diagonal
+  moments as well (regression tests in `test_sdp_problem.py` and
+  `test_solvers.py`).
+- CLARABEL backend: the svec unscaling multiplied off-diagonal dual
+  entries by `sqrt(2)` instead of dividing, inflating `y_mat`
+  off-diagonals by 2 (and corrupting `sos_decomposition`); the reported
+  dual value only looked right because it cancelled against the
+  half-trace bug above. The MOSEK backend's TODO doubting its `y_mat`
+  convention is resolved the same way: `getbarxj` was always the
+  canonical dual — the mismatch came from the shared `dual_value` bug
+  (regression test in `test_clarabel_solver.py`; both TODOs removed).
+- `fast_substitute`: a purely commutative rule (e.g. `x -> 2`) applied to
+  a monomial with noncommutative factors dropped the noncommutative tail
+  entirely (`fast_substitute(A*B, x, 2)` returned `1`), silently
+  collapsing mixed classical/operator problems. The tail is now
+  reattached, with expansion when the replacement is a sum (regression
+  tests in `test_substitutions.py`).
+- Complex relaxations: the adjoint fallback in
+  `NpaRelaxation._get_index_of_monomial` reused the adjoint's SDP variable
+  without conjugation, which is not a linear operation — complex
+  constraints could silently degenerate (e.g. `I*A**2 - I*Dagger(A)**2 + 1
+  >= 0` became `1 >= 0`). The fallback now raises a clear `RuntimeError`
+  in complex relaxations, matching `_process_monomial` and
+  `_resolve_position` (regression test in `test_relaxation.py`).
+- Equality elimination: the rank of the equality system was computed as
+  `last nonzero R row + 1`, which overshoots the true rank whenever a
+  dependent row precedes an independent one (e.g. a duplicated equality)
+  and silently pinned genuinely free variables. The nonzero rows of the
+  unpivoted trapezoidal R are linearly independent, so their count is the
+  rank; the fixed/free Q columns are now selected by the actual row
+  indices (regression test in `test_sdp_problem.py`).
+
 ## [0.2.1] — 2026-09-29
 
 ### Added

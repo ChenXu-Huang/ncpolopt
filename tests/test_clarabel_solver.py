@@ -116,3 +116,24 @@ def test_verbose_and_solver_options() -> None:
     solution = problem.relaxation(level=2).solve(solver="clarabel", settings=settings)
     assert solution.status == "optimal"
     assert solution.primal == pytest.approx(-0.75, abs=1e-6)
+
+
+def test_dual_blocks_unscale_offdiagonals() -> None:
+    """The svec unscaling divides off-diagonals by sqrt(2), not multiplies.
+
+    Regression: the clarabel y_mat had off-diagonal entries inflated by a
+    factor of 2, corrupting sos_decomposition while the reported dual value
+    accidentally stayed right (cancelled by the dual_value half-trace).
+    """
+    X = nc.generate_operators("X", 1, hermitian=True)[0]
+    Y = nc.generate_operators("Y", 1, hermitian=True)[0]
+    problem = nc.Problem(
+        variables=[X, Y],
+        objective=-X + Y * Y,
+        substitutions={X * X: 1, X * Y: 1, Y * X: 1},
+    )
+    reference = problem.solve(level=1, solver="cvxpy")
+    result = problem.solve(level=1, solver="clarabel")
+    assert len(reference.y_mat) == len(result.y_mat)
+    for ref_block, block in zip(reference.y_mat, result.y_mat, strict=True):
+        assert np.allclose(block, ref_block, atol=1e-5)
