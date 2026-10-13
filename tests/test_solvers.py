@@ -14,7 +14,12 @@ import shutil
 import pytest
 
 from ncpolopt.problem import Problem
-from ncpolopt.solvers.base import SolverError, SolverKind, SolverSettings
+from ncpolopt.solvers.base import (
+    SolverError,
+    SolverKind,
+    SolverSettings,
+    UnsupportedSdpError,
+)
 from ncpolopt.solvers.registry import requires
 from ncpolopt.variables import generate_operators
 
@@ -144,3 +149,37 @@ def test_dual_value_pairs_offdiagonal_constants_fully(
     # -tr(Y @ A_X) = -c_X = 1; the upper-triangle-only pairing gave 0.5.
     X = generate_operators("X", 1, hermitian=True)[0]
     assert solution.dual_value(X) == pytest.approx(1.0, abs=1e-4)
+
+
+def test_elimination_maps_duals_through_basis(solver_kind: SolverKind) -> None:
+    """dual_value resolves pre-elimination variables through the basis.
+
+    Regression: after removeequalities the monomial index still referred
+    to the pre-elimination variable numbers, so dual_value paired the dual
+    blocks with the wrong coefficient rows.
+    """
+    if solver_kind is SolverKind.CVXOPT:
+        pytest.skip("numbers are not asserted on the cvxopt/PICOS path")
+    from ncpolopt.variables import generate_variables
+
+    x = generate_variables("x", 1)[0]
+    problem = Problem([x], objective=x**2, equalities=[x - 0.4])
+    reference = problem.solve(2, solver=solver_kind)
+    eliminated = problem.solve(2, removeequalities=True, solver=solver_kind)
+    assert eliminated.dual_value(x) == pytest.approx(
+        reference.dual_value(x), abs=1e-5
+    )
+    assert eliminated.dual == pytest.approx(reference.dual, abs=1e-5)
+
+
+@pytest.mark.skipif(not requires("picos"), reason="picos is not installed")
+def test_picos_rejects_complex_sdps() -> None:
+    """The PICOS backend refuses complex SDPs instead of mis-solving them.
+
+    Regression: the complex path built non-Hermitian LMIs (the mirror
+    entries were not conjugated) and crashed or mis-solved.
+    """
+    X = generate_operators("X", 1, hermitian=True)[0]
+    problem = Problem([X], objective=X, complex_matrix=True)
+    with pytest.raises(UnsupportedSdpError, match="complex"):
+        problem.solve(1, solver=SolverKind.CVXOPT)

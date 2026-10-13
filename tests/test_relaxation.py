@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import pytest
 from sympy import S
 from sympy.physics.quantum.dagger import Dagger
@@ -366,3 +367,44 @@ def test_complex_relaxation_rejects_adjoint_only_monomial() -> None:
     )
     with pytest.raises(RuntimeError, match="adjoint"):
         problem.relaxation(level=1)
+
+
+def test_moment_substitution_keeps_outer_coefficient() -> None:
+    """A moment substitution value inherits the monomial's scalar factor.
+
+    Regression: the recursion into the substituted value dropped the outer
+    coefficient, writing 1.0*x0 where 2.0*x0 belonged.
+    """
+    X = generate_operators("x", 2, hermitian=True)
+    problem = Problem(
+        X,
+        objective=X[0],
+        substitutions={X[0] * X[1]: 2 * X[1]},
+        momentsubstitutions={X[1]: X[0]},
+    )
+    sdp = problem.relaxation(level=1).sdp
+    block = sdp.blocks[0]
+    k = sdp.monomial_index[X[0]]
+    entries = {
+        (int(pos) // block.size, int(pos) % block.size): value
+        for var, pos, value in zip(
+            block.coo.row, block.coo.col, block.coo.data, strict=True
+        )
+        if int(var) == k
+    }
+    # The (X0, X1) entry is <X0 X1> = 2 <X1> = 2 <X0>.
+    assert entries[(1, 2)] == 2.0
+
+
+def test_complex_objective_is_detected() -> None:
+    """A complex objective coefficient forces a complex relaxation.
+
+    Regression: the automatic complex detection scanned only the
+    constraints, so a complex objective crashed with a TypeError deep in
+    set_objective instead of building a complex SDP.
+    """
+    B = generate_operators("B", 1, hermitian=True)[0]
+    problem = Problem([B], objective=(1 + 2 * S.ImaginaryUnit) * B)
+    relaxation = problem.relaxation(level=1)
+    assert relaxation.complex_matrix is True
+    assert relaxation.sdp.blocks[0].coo.dtype == np.complex128

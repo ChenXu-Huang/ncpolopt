@@ -149,6 +149,26 @@ def read_sdpa_out(filename: str) -> SdpaOutcome:
     )
 
 
+def unembed_block(matrix: np.ndarray, size: int) -> np.ndarray:
+    """Undo the doubled real embedding of a complex block.
+
+    The writer embeds a complex ``size``-by-``size`` block ``Z = X + iY``
+    as the real doubled block ``[[X, Y], [-Y, X]]``; the solver's output
+    matrices come back in that doubled form. A matrix that does not match
+    the doubled size is returned unchanged (real problems).
+
+    Args:
+        matrix: The block matrix as parsed from the SDPA output.
+        size: The size of the original (complex) block.
+
+    Returns:
+        The complex block matrix, or the input unchanged.
+    """
+    if matrix.shape[0] != 2 * size:
+        return matrix
+    return matrix[:size, :size] + 1j * matrix[:size, size:]
+
+
 def write_dat_s(problem: SdpProblem, filename: str) -> None:
     """Write a frozen SDP problem to a .dat-s file.
 
@@ -184,10 +204,14 @@ def write_dat_s(problem: SdpProblem, filename: str) -> None:
                         f"{j + size + 1}\t{real}"
                     )
                 if imag != 0:
-                    lines[int(k) + problem.n_vars].append(
+                    # The imaginary part of variable k lives in variable
+                    # k + n_vars; the constant matrix F0 (k == 0) carries
+                    # its own imaginary part in its own group.
+                    group = int(k) + problem.n_vars if k > 0 else 0
+                    lines[group].append(
                         f"{block_index + 1}\t{i + 1}\t{j + size + 1}\t{imag}"
                     )
-                    lines[int(k) + problem.n_vars].append(
+                    lines[group].append(
                         f"{block_index + 1}\t{j + 1}\t{i + size + 1}\t{-imag}"
                     )
     with open(filename, "w") as file_:
@@ -199,11 +223,14 @@ def write_dat_s(problem: SdpProblem, filename: str) -> None:
             str(structure).replace("[", "(").replace("]", ")")
             + " = BlocStructure\n"
         )
-        # The objective coefficients of a hermitian problem are real; the
-        # imaginary part of the dtype is never stored in the file.
+        # The objective coefficients of a hermitian problem pair as
+        # Re(c . x) = Re(c) . Re(x) - Im(c) . Im(x): the doubled variables
+        # hold the real parts first, then the imaginary parts.
         objective = ", ".join(str(float(np.real(c))) for c in problem.obj)
         if multiplier == 2:
-            objective += ", " + objective
+            objective += ", " + ", ".join(
+                str(float(-np.imag(c))) for c in problem.obj
+            )
         file_.write("{" + objective + "}\n")
         for k, entries in enumerate(lines):
             for entry in entries:

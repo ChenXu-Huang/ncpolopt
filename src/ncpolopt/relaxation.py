@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from sympy import S
 from sympy.core.add import Add
+from sympy.matrices.matrixbase import MatrixBase
 
 from ._logging import module_logger
 from .block_structure import BlockKind, BlockStructure, compute_block_structure
@@ -226,14 +227,34 @@ class NpaRelaxation(Relaxation):
         problem = self.problem
         self._prepare_substitutions()
         self.monomial_sets = self._generate_monomial_sets()
-        # Constraints with complex coefficients force a complex-valued SDP.
-        for constraint in flatten([problem.inequalities, problem.equalities]):
-            if isinstance(constraint, (MomentEntry, MomentExpr)):
-                continue
-            if constraint.is_Relational:
-                constraint = convert_relational(constraint)
-            if iscomplex(constraint):
+        # Constraints and the objective with complex coefficients force a
+        # complex-valued SDP. Moment expressions carry their coefficients
+        # directly; polynomials are scanned for complex literals.
+        def _has_complex_coefficients(item: Any) -> bool:
+            if isinstance(item, MomentEntry):
+                return iscomplex(item.coefficient)
+            if isinstance(item, MomentExpr):
+                return any(iscomplex(term.coefficient) for term in item.terms)
+            if isinstance(item, MatrixBase):
+                # A matrix objective (steering) is complex if any entry is.
+                return any(iscomplex(entry) for entry in item)
+            constraint = convert_relational(item) if item.is_Relational else item
+            return iscomplex(constraint)
+
+        for item in flatten(
+            [
+                problem.inequalities,
+                problem.equalities,
+                problem.momentinequalities,
+                problem.momentequalities,
+            ]
+        ):
+            if _has_complex_coefficients(item):
                 self.complex_matrix = True
+        if problem.objective is not None and _has_complex_coefficients(
+            problem.objective
+        ):
+            self.complex_matrix = True
         structure = self._compute_block_structure(
             variables=problem.variables,
             monomial_sets=self.monomial_sets,
@@ -462,7 +483,12 @@ class NpaRelaxation(Relaxation):
                     value = complex(arg) if iscomplex(arg) else float(arg)
                     result.append((0, coeff * value))
                 else:
-                    result += self._process_monomial(arg, block, i, j)
+                    # The outer coefficient applies to every term of the
+                    # substituted value (e.g. 2*m with m -> x gives 2*x).
+                    result += [
+                        (k, coeff * inner_coeff)
+                        for k, inner_coeff in self._process_monomial(arg, block, i, j)
+                    ]
             return result
         index = self._builder.monomial_index.get(processed_monomial)
         if index is None and not self.complex_matrix:
@@ -545,9 +571,11 @@ class NpaRelaxation(Relaxation):
         for k, i, j, value in entries:
             by_position.setdefault((i, j), []).append((k, value))
         for i1, j1, i2, j2 in swaps:
-            by_position[(i1, j1)], by_position[(i2, j2)] = (
-                by_position[(i2, j2)],
-                by_position[(i1, j1)],
+            # Substitution-pinned (e.g. zeroed) moments leave holes in the
+            # block: a missing position is an empty entry list, not an error.
+            by_position[i1, j1], by_position[i2, j2] = (
+                by_position.get((i2, j2), []),
+                by_position.get((i1, j1), []),
             )
         new_entries: list[tuple[int, int, int, Any]] = []
         for (i, j), values in by_position.items():

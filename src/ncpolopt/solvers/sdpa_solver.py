@@ -20,8 +20,10 @@ import subprocess
 import tempfile
 import time
 
+import numpy as np
+
 from ..sdp_problem import SdpProblem
-from ..sdpa_writer import read_sdpa_out, write_dat_s
+from ..sdpa_writer import read_sdpa_out, unembed_block, write_dat_s
 from .base import (
     SolverError,
     SolverKind,
@@ -75,6 +77,20 @@ def solve_with_sdpa(problem: SdpProblem, settings: SolverSettings) -> SolverResu
                 subprocess.run(command_line, stdout=devnull, stderr=devnull)
         solution_time = time.monotonic() - tstart
         parsed = read_sdpa_out(out_filename)
+    x_mat = parsed.x_mat
+    y_mat = parsed.y_mat
+    if any(block.coo.dtype == np.complex128 for block in problem.blocks):
+        # Complex problems are written as doubled real blocks; fold the
+        # solution back to the original complex block sizes so that value
+        # extraction sees the whole moments, not just their real parts.
+        x_mat = tuple(
+            unembed_block(matrix, block.size)
+            for matrix, block in zip(x_mat, problem.blocks, strict=True)
+        )
+        y_mat = tuple(
+            unembed_block(matrix, block.size)
+            for matrix, block in zip(y_mat, problem.blocks, strict=True)
+        )
     return SolverResult(
         status=parsed.status,
         primal=(
@@ -87,8 +103,8 @@ def solve_with_sdpa(problem: SdpProblem, settings: SolverSettings) -> SolverResu
             if parsed.dual is not None
             else float("nan")
         ),
-        x_mat=parsed.x_mat,
-        y_mat=parsed.y_mat,
+        x_mat=x_mat,
+        y_mat=y_mat,
         solution_time=solution_time,
         raw=parsed,
     )

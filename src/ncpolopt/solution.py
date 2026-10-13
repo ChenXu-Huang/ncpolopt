@@ -239,6 +239,37 @@ class Solution:
             if is_number_type(monomial)
             else self.sdp.monomial_index[monomial]
         )
+        elimination = self.sdp.elimination
+        if elimination is not None and index >= 1:
+            # The monomial refers to a pre-elimination variable
+            # x_k = shift_k + sum_m basis[k-1, m] y_m; the shift pairs with
+            # the constant column, which carries no dual, so the dual
+            # contribution spreads over the reduced variables.
+            result = 0.0
+            for m, weight in enumerate(elimination.basis[index - 1]):
+                if weight != 0:
+                    result += weight * self._pairing_with_variable(
+                        m + 1, y_mat, block_indices
+                    )
+            return float(np.real(result))
+        return self._pairing_with_variable(index, y_mat, block_indices)
+
+    def _pairing_with_variable(
+        self,
+        index: int,
+        y_mat: tuple[np.ndarray, ...],
+        block_indices: Sequence[int],
+    ) -> float:
+        """The dual pairing ``-sum_b tr(Y_b @ A_k,b)`` of one SDP variable.
+
+        Args:
+            index: The 1-based SDP variable index (0 for the constant).
+            y_mat: The per-block dual matrices.
+            block_indices: The blocks to include.
+
+        Returns:
+            The pairing over the blocks in scope.
+        """
         result = 0.0
         for block in block_indices:
             coo = self.sdp.blocks[block].coo
@@ -257,7 +288,7 @@ class Solution:
                 if row != column:
                     term += np.conj(value) * y_block[row, column]
                 result -= term
-        return result
+        return float(np.real(result))
 
     def dual_block(self, block: int) -> np.ndarray:
         """The dual solution matrix of one block.

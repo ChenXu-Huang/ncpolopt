@@ -8,6 +8,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- SDPA complex path: `write_dat_s` wrote the doubled objective as
+  `[Re(c), Re(c)]` (a complex coefficient vanished from the file, and real
+  coefficients gave the imaginary variables spurious weight) and wrote the
+  constant matrix's imaginary entries into variable `n_vars`'s group; the
+  objective is now `[Re(c), -Im(c)]` and F0's imaginary part stays in
+  group 0. Complex solutions are folded back from the doubled real blocks
+  to the original complex block sizes on return (`unembed_block`), so
+  value extraction no longer sees only the real parts (regression tests in
+  `test_sdpa_writer.py`).
+- PICOS backend: complex-valued SDPs are rejected with
+  `UnsupportedSdpError` — the per-variable construction cannot express the
+  conjugate-mirrored coefficient matrices a complex LMI needs, and the old
+  code crashed or built a non-Hermitian problem (regression test in
+  `test_solvers.py`). `block_matrices` and `dual_value` now mirror with
+  the conjugate transpose and pair in complex arithmetic.
+- `_process_monomial`: a moment substitution value lost the monomial's
+  outer scalar factor (`2*m` with `m -> x` wrote `x`, not `2*x`)
+  (regression test in `test_relaxation.py`).
+- Automatic complex detection now covers the objective (polynomial,
+  moment-expression and matrix forms) and moment (in)equality constraints;
+  a complex objective previously crashed in `set_objective` with a
+  `TypeError` (regression test in `test_relaxation.py`).
+- `_impose_ppt` tolerates blocks with substitution holes (moments zeroed
+  by rules like `a0*a1 -> 0` leave no entry): Moroder + projective
+  substitutions + `extramomentmatrices=[["copy", "ppt"]]` builds instead
+  of raising `KeyError` (regression test in `test_hierarchies.py`).
+- `Solution.dual_value` resolves monomials through the elimination basis
+  after `removeequalities` (the monomial index refers to pre-elimination
+  variables; their dual contributions spread over the reduced ones via
+  `x = shift + basis @ y`), with the transform stored on the frozen
+  `SdpProblem` (regression test in `test_solvers.py`).
+- Steering objectives: the `(0, 0)` group's constant objective matrix no
+  longer assumes variable 1 (wrong when parameter blocks exist), and
+  diagonal sub-block groups fold the lower-triangle objective weights onto
+  the constrained mirror variables — the phantom variables carry no
+  constraint entries, and weighting them made the SDP unbounded
+  (regression tests in `test_hierarchies.py`).
 - Dual value convention: `dual_value` paired the dual matrices with the
   unsymmetrized (upper-triangle-only) constant matrix, counting every
   off-diagonal constant entry at half weight — the reported dual of

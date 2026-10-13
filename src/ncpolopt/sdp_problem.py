@@ -101,6 +101,11 @@ class SdpProblem:
             built under (used by solution extraction).
         moment_substitutions: The moment replacement rules the moment
             matrix was built under (used by solution extraction).
+        elimination: The basis transform when equalities were eliminated
+            (``x = shift + basis @ y`` over the pre-elimination variables);
+            ``monomial_index`` keeps referring to the pre-elimination
+            variables, and the transform maps their dual contributions
+            onto the reduced ones.
     """
 
     n_vars: int
@@ -115,6 +120,7 @@ class SdpProblem:
     moment_basis: tuple[Any, ...] = ()
     substitutions: dict[Any, Any] = field(default_factory=dict)
     moment_substitutions: dict[Any, Any] = field(default_factory=dict)
+    elimination: BasisTransform | None = None
 
 
 class SdpBuilder:
@@ -142,6 +148,7 @@ class SdpBuilder:
         self.column_locations: dict[int, tuple[int, int, int]] = {}
         self.monomial_index: dict[Any, int] = {}
         self.obj_facvar = np.zeros(1, dtype=self._dtype)
+        self._elimination: BasisTransform | None = None
 
     @property
     def n_vars(self) -> int:
@@ -266,6 +273,7 @@ class SdpBuilder:
         shift = transform.shift
         basis = transform.basis
         n_free = basis.shape[1]
+        self._elimination = transform
         for block in range(len(self.block_sizes)):
             rows = np.asarray(self._rows[block], dtype=np.int64)
             cols = np.asarray(self._cols[block], dtype=np.int64)
@@ -362,4 +370,5 @@ class SdpBuilder:
             moment_basis=moment_basis,
             substitutions=dict(substitutions or {}),
             moment_substitutions=dict(moment_substitutions or {}),
+            elimination=self._elimination,
         )

@@ -53,8 +53,10 @@ def test_write_dat_s_complex(tmp_path) -> None:
     text = filename.read_text()
     assert "4 = number of vars" in text
     assert "(4) = BlocStructure" in text
+    # The doubled objective is [Re(c), -Im(c)]; the coefficients here are
+    # real, so the imaginary variables get zero weight (written as -0.0).
     objective = text.split("{", 1)[1].split("}", 1)[0]
-    assert objective.count("1.0") == 2 and objective.count("-0.5") == 2
+    assert objective == "1.0, -0.5, -0.0, -0.0"
 
 
 def test_write_dat_s_complex_imaginary_entries(tmp_path) -> None:
@@ -145,3 +147,59 @@ def test_read_sdpa_out_status_phases() -> None:
     assert _parse_phase("phase.value = dINF") == "infeasible"
     assert _parse_phase("phase.value = pdUNBD") == "unbounded"
     assert _parse_phase("phase.value = ???") == "unknown"
+
+
+def test_write_dat_s_complex_objective_imaginary_part(tmp_path) -> None:
+    """The doubled objective's second half is -Im(c), not Re(c).
+
+    Regression: the objective was written as [Re(c), Re(c)], so a complex
+    coefficient like 1j vanished from the written problem entirely.
+    """
+    x = Symbol("x")
+    builder = SdpBuilder([2], normalized=True, complex_matrix=True)
+    builder.add_entry(0, 0, 0, 0, 1.0)
+    k = builder.new_variable(x, 0, 0, 1)
+    builder.add_entry(0, 0, 1, k, 1.0)
+    builder.set_objective([0.0, 1.0j])
+    problem = builder.freeze(1, {}, ())
+    filename = tmp_path / "obj.dat-s"
+    write_dat_s(problem, str(filename))
+    objective = filename.read_text().split("{", 1)[1].split("}", 1)[0]
+    assert objective == "0.0, -1.0"
+
+
+def test_write_dat_s_constant_imaginary_part_stays_in_f0(tmp_path) -> None:
+    """F0's imaginary entries are written in group 0, not variable n_vars.
+
+    Regression: the imaginary part of the constant matrix was written into
+    the group of variable ``n_vars``, corrupting that variable's matrix
+    and dropping F0's imaginary part.
+    """
+    x = Symbol("x")
+    builder = SdpBuilder([2], normalized=True, complex_matrix=True)
+    builder.add_entry(0, 0, 1, 0, 1.0j)  # off-diagonal constant 1j
+    k = builder.new_variable(x, 0, 1, 1)
+    builder.add_entry(0, 1, 1, k, 1.0)
+    builder.set_objective([0.0, 1.0])
+    problem = builder.freeze(1, {}, ())
+    filename = tmp_path / "f0.dat-s"
+    write_dat_s(problem, str(filename))
+    lines = filename.read_text().splitlines()
+    # The doubled block has size 4; F0's imaginary part (negated, like the
+    # real part) lands at (1, 3) and (2, 4) of group 0.
+    assert "0\t1\t1\t4\t-1.0" in lines
+    assert "0\t1\t2\t3\t1.0" in lines
+    # Nothing may leak into variable 1's group beyond its own entries.
+    assert not any(line.startswith("1\t") and "\t3\t" in line for line in lines)
+
+
+def test_unembed_block_roundtrip() -> None:
+    """unembed_block undoes the doubled real embedding [[X, Y], [-Y, X]]."""
+    from ncpolopt.sdpa_writer import unembed_block
+
+    x_part = np.array([[1.0, 2.0], [2.0, 5.0]])
+    y_part = np.array([[0.0, 3.0], [-3.0, 0.0]])
+    doubled = np.block([[x_part, y_part], [-y_part, x_part]])
+    assert np.allclose(unembed_block(doubled, 2), x_part + 1j * y_part)
+    # A real-sized matrix passes through unchanged.
+    assert unembed_block(x_part, 2) is x_part

@@ -208,12 +208,16 @@ class SteeringHierarchy(NpaRelaxation):
     def _trace_facvar(self, objective: Any) -> list[complex]:
         """The dense objective vector of a matrix-valued steering objective.
 
-        The coefficient of the (r, c) sub-position variable of a moment
-        reads off the transposed entry of the moment's coefficient matrix
-        (the trace against the standard basis matrix). The constant matrix
-        of the objective lands on the (0, 0)-sub-block group -- variable 1,
-        the first variable of the unnormalized normalization moment --
-        which is what pins the otherwise unnormalized steering matrix.
+        The objective pairs as ``sum_{i,j} M[j,i] . v[i,j]`` where ``v``
+        is the moment's sub-block of values: an SDP variable per
+        sub-position, shared between mirror positions (the ``1 +- i``
+        factors live on the constraint side as part of the complex
+        embedding, not in the value semantics). A diagonal group only
+        stores its upper triangle -- the lower-triangle variables are
+        phantoms without constraint entries -- so the lower-triangle
+        objective weight folds onto the mirror variable instead of
+        assigning a coefficient to an unconstrained variable (which made
+        the SDP unbounded).
 
         Args:
             objective: The ``d x d`` matrix of polynomials.
@@ -236,13 +240,32 @@ class SteeringHierarchy(NpaRelaxation):
                     matrix[i, j] += value
         for key, matrix in coefficients.items():
             # The hierarchy is unnormalized, so the (0, 0) moment is a free
-            # variable like any other moment's group: its first variable is
-            # 1, the first variable the builder created.
-            k = 1 if is_number_type(key) else self._builder.monomial_index[key]
+            # variable like any other moment's group; its group starts at
+            # the variable recorded for the (0, 0) entry of the first
+            # moment block (after any parameter blocks).
+            if is_number_type(key):
+                k = self._position_to_var[(self._n_parameter_blocks, 0, 0)]
+            else:
+                k = self._builder.monomial_index[key]
+            _, block_row, block_column = self._builder.column_locations[k]
+            diagonal_group = block_row == block_column
             for i in range(d):
                 for j in range(d):
-                    value = matrix[j, i]
+                    if diagonal_group:
+                        if i > j:
+                            continue  # phantom: folds onto the mirror
+                        if i == j:
+                            coefficient = matrix[i, i]
+                        else:
+                            # Mirror positions share one variable:
+                            # v[i, j] = v[j, i] = x, so both objective
+                            # entries land on it.
+                            coefficient = matrix[j, i] + matrix[i, j]
+                    else:
+                        coefficient = matrix[j, i]
                     facvar[k + i * d + j] = (
-                        complex(value) if iscomplex(value) else float(value)
+                        complex(coefficient)
+                        if iscomplex(coefficient)
+                        else float(coefficient)
                     )
         return facvar

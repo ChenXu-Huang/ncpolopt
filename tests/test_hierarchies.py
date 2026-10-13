@@ -340,3 +340,73 @@ def test_rdm_circulant_basis_must_be_square() -> None:
     problem = Problem(X, normalized=False, extramonomials=[products[:3]])
     with pytest.raises(ValueError, match="square basis"):
         RdmHierarchy(problem, -1, circulant=True)
+
+
+def test_steering_offdiagonal_objective_folds_onto_constrained_variables() -> None:
+    """Off-diagonal objective weights fold onto the constrained variables.
+
+    Regression: the lower-triangle variables of a diagonal sub-block group
+    carry no constraint entries (phantoms); objective coefficients on them
+    made the SDP unbounded. The mirror pair folds with (1+i)/(1-i).
+    """
+    X = generate_operators("x", 2, hermitian=True)
+    problem = Problem(
+        X,
+        objective=Matrix([[0, 1], [1, 0]]),
+        normalized=False,
+        complex_matrix=True,
+    )
+    sdp = SteeringHierarchy(problem, 1, matrix_var_dim=2).sdp
+    # The (0, 0) group starts at variable 1; its used off-diagonal
+    # variable 2 gets M[1,0]*(1+i) + M[0,1]*(1-i) = 2, the phantom
+    # variable 3 keeps a zero coefficient.
+    assert sdp.obj[1] == 2.0
+    assert sdp.obj[2] == 0.0
+
+
+def test_steering_objective_constant_shifts_past_parameters() -> None:
+    """The (0, 0) group's objective entry moves with the parameter blocks.
+
+    Regression: the constant objective matrix was hardcoded onto variable
+    1, which is a parameter variable when parameters are present.
+    """
+    X = generate_operators("x", 2, hermitian=True)
+    t = generate_operators("t", 1, hermitian=True)
+    problem = Problem(
+        X,
+        objective=Matrix([[0, 0], [0, 1]]),
+        parameters=t,
+        normalized=False,
+        complex_matrix=True,
+    )
+    sdp = SteeringHierarchy(problem, 1, matrix_var_dim=2).sdp
+    # Variable 1 is the parameter; the (0, 0) group of the moment block
+    # starts at variable 2, whose sub-position (1, 1) is variable 2 + 3.
+    assert sdp.obj[4] == 1.0
+    assert sdp.obj[0] == 0.0
+
+
+def test_moroder_ppt_tolerates_substitution_holes() -> None:
+    """copy+ppt builds even when substitutions zero out moment entries.
+
+    Regression: _impose_ppt indexed the transposed positions directly, so
+    a moment zeroed by a substitution rule (a0*a1 -> 0 leaves no entry)
+    raised a bare KeyError.
+    """
+    A = generate_operators("a", 2, hermitian=True)
+    B = generate_operators("b", 1, hermitian=True)
+    substitutions = {
+        A[0] ** 2: A[0],
+        A[1] ** 2: A[1],
+        A[0] * A[1]: 0,
+        A[1] * A[0]: 0,
+        B[0] ** 2: B[0],
+    }
+    problem = Problem(
+        [A, B],
+        substitutions=substitutions,
+        normalized=False,
+        extramomentmatrices=[["copy", "ppt"]],
+    )
+    relaxation = MoroderHierarchy(problem, 1)
+    assert len(relaxation.sdp.blocks) == 2

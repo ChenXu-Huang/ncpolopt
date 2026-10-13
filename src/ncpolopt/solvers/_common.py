@@ -30,7 +30,9 @@ def block_matrices(problem: SdpProblem, x: np.ndarray) -> tuple[np.ndarray, ...]
     x_mat = []
     for block in problem.blocks:
         mat = block.evaluate(x)
-        mat = mat + mat.T - np.diag(np.diag(mat))
+        # The COO stores the upper triangle; the full matrix is the
+        # Hermitian mirror image (the plain transpose for real blocks).
+        mat = mat + mat.conj().T - np.diag(np.diag(mat))
         x_mat.append(mat)
     return tuple(x_mat)
 
@@ -49,9 +51,11 @@ def dual_value(problem: SdpProblem, y_mat: tuple[np.ndarray, ...]) -> float:
     for block, y in zip(problem.blocks, y_mat, strict=True):
         if y is None:
             continue
-        # Scalar (1x1) constraints report their dual as a bare float.
-        y = np.atleast_2d(np.asarray(y, dtype=float))
+        # Scalar (1x1) constraints report their dual as a bare float. The
+        # trace of Hermitian Y and A0 is real, so the pairing is safe to
+        # compute in complex arithmetic and read off the real part.
+        y = np.atleast_2d(np.asarray(y, dtype=complex))
         if y.size == 0:
             continue
-        value -= float(np.trace(y @ block.constant_matrix()))
+        value -= float(np.trace(y @ block.constant_matrix()).real)
     return value

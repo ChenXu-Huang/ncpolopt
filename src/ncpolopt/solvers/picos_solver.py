@@ -113,13 +113,21 @@ def convert_to_picos(
 
     Raises:
         UnsupportedSdpError: If a variable was created outside the first
-            moment matrix block, or the problem has no blocks.
+            moment matrix block, the problem has no blocks, or the problem
+            is complex-valued. The complex case needs conjugate-mirrored
+            coefficient matrices, which this per-variable construction
+            cannot express; use the external SDPA backend instead.
     """
     import picos as pic
 
     if not problem.blocks:
         raise UnsupportedSdpError(
             "The PICOS backend needs at least one block."
+        )
+    if any(block.coo.dtype == _COMPLEX_DTYPE for block in problem.blocks):
+        raise UnsupportedSdpError(
+            "The PICOS backend does not support complex-valued SDPs; use "
+            "the external SDPA backend instead."
         )
     for k in range(1, problem.n_vars + 1):
         if problem.column_locations[k][0] != 0:
@@ -128,25 +136,15 @@ def convert_to_picos(
                 "matrix; variables created in other blocks (parameter blocks, "
                 "rectangular hierarchies) are not supported."
             )
-    complex_matrix = any(
-        block.coo.dtype == _COMPLEX_DTYPE for block in problem.blocks
-    )
     size = problem.blocks[0].size
-    dtype = np.complex128 if complex_matrix else np.float64
-    if complex_matrix:
-        moment = pic.HermitianVariable("X", size)
-        duplicate = (
-            pic.HermitianVariable("Y", size) if duplicate_moment_matrix else None
-        )
-    else:
-        moment = pic.SymmetricVariable("X", size)
-        duplicate = (
-            pic.SymmetricVariable("Y", size) if duplicate_moment_matrix else None
-        )
+    moment = pic.SymmetricVariable("X", size)
+    duplicate = (
+        pic.SymmetricVariable("Y", size) if duplicate_moment_matrix else None
+    )
     P = pic.Problem()
     for block in problem.blocks:
         block_size = block.size
-        constant = np.zeros((block_size, block_size), dtype=dtype)
+        constant = np.zeros((block_size, block_size))
         terms: dict[int, tuple[int, int, np.ndarray]] = {}
         for k, position, value in zip(
             block.coo.row, block.coo.col, block.coo.data, strict=True
@@ -159,7 +157,7 @@ def convert_to_picos(
                 continue
             row, column = problem.column_locations[int(k)][1:]
             _, _, matrix = terms.setdefault(
-                int(k), (row, column, np.zeros((block_size, block_size), dtype=dtype))
+                int(k), (row, column, np.zeros((block_size, block_size)))
             )
             matrix[i, j] += value
             if i != j:
