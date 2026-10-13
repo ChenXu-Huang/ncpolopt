@@ -329,13 +329,26 @@ class Solution:
                 "Cannot automatically match primal and dual variables: the "
                 "problem has no moment basis."
             )
-        if blocks is None:
-            block_indices: Sequence[int] = range(len(y_mat))
-        else:
-            block_indices = blocks
+        # Only the moment blocks carry the moment basis; decomposing a
+        # localizing or scalar block with those labels would mislabel
+        # every term.
+        block_indices: Sequence[int] = (
+            list(self.moment_block_indices) if blocks is None else blocks
+        )
         sos = []
         for block in block_indices:
-            vals, vecs = np.linalg.eigh(y_mat[block])
+            y_block = y_mat[block]
+            if (
+                any(isinstance(monomial, list) for monomial in basis)
+                or len(basis) != y_block.shape[0]
+            ):
+                raise RuntimeError(
+                    f"Cannot match block {block} (size {y_block.shape[0]}) "
+                    "to the moment basis for an SOS decomposition (the basis "
+                    "is nested or differently sized); decompose the dual "
+                    "matrix manually."
+                )
+            vals, vecs = np.linalg.eigh(y_block)
             term = 0
             for j, val in enumerate(vals):
                 if val < -0.001:

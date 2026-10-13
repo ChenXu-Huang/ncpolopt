@@ -410,3 +410,70 @@ def test_moroder_ppt_tolerates_substitution_holes() -> None:
     )
     relaxation = MoroderHierarchy(problem, 1)
     assert len(relaxation.sdp.blocks) == 2
+
+
+def test_steering_rejects_extra_moment_matrices() -> None:
+    """Steering + extramomentmatrices is refused instead of misaligned."""
+    X = generate_operators("x", 2, hermitian=True)
+    problem = Problem(
+        X,
+        normalized=False,
+        complex_matrix=True,
+        extramomentmatrices=[["copy"]],
+    )
+    with pytest.raises(ValueError, match="extra moment"):
+        SteeringHierarchy(problem, 1, matrix_var_dim=2)
+
+
+def test_steering_group_reuse_shares_variables() -> None:
+    """A repeated moment reuses its recorded variable group.
+
+    Regression: the reuse arithmetic ``k + position`` assumed the group
+    occupied consecutive ids, which breaks when a moment substitution
+    interleaves other variables into the numbering.
+    """
+    X = generate_operators("x", 2, hermitian=True)
+    problem = Problem(
+        X,
+        normalized=False,
+        complex_matrix=True,
+        momentsubstitutions={X[0] * X[1]: X[0] + X[1]},
+    )
+    sdp = SteeringHierarchy(problem, 1, matrix_var_dim=2).sdp
+    coo = sdp.blocks[0]
+    size = 6  # 3 basis words times matrix_var_dim 2
+    entries: dict[tuple[int, int], set[int]] = {}
+    for k, position, _ in zip(coo.coo.row, coo.coo.col, coo.coo.data, strict=True):
+        if int(k) == 0:
+            continue
+        entries.setdefault(divmod(int(position), size), set()).add(int(k))
+    # The sub-blocks at (0, 1) and (1, 2) hold the groups of x0; at
+    # (0, 2) and (1, 2) the group of x1 (the substitution fans x0*x1 out
+    # to both). The reused groups must be identical at both occurrences.
+    group_x0_first = entries[0, 2] | entries[0, 3] | entries[1, 2] | entries[1, 3]
+    group_x1_first = entries[0, 4] | entries[0, 5] | entries[1, 4] | entries[1, 5]
+    second = entries[2, 4] | entries[2, 5] | entries[3, 4] | entries[3, 5]
+    assert group_x0_first < second
+    assert group_x1_first < second
+
+
+def test_rdm_circulant_applies_substitutions() -> None:
+    """The circulant layout reduces its words by the substitution rules.
+
+    Regression: the banded layout pushed ``Dagger(m_i) * m_j`` verbatim,
+    creating variables for unreduced words while the objective and
+    constraints resolved the reduced ones.
+    """
+    X = generate_operators("x", 3, hermitian=True)
+    products = [X[i] * X[j] for i in range(3) for j in range(3)]
+    problem = Problem(
+        X,
+        normalized=False,
+        extramonomials=[products],
+        substitutions={X[0] ** 2: 1},
+    )
+    sdp = RdmHierarchy(problem, -1, circulant=True).sdp
+    # The entry (x0*x0, x1*x1) reduces to the degree-2 moment x1**2; the
+    # unreduced degree-4 word must not get its own variable.
+    assert X[1] ** 2 in sdp.monomial_index
+    assert X[0] * X[0] * X[1] * X[1] not in sdp.monomial_index

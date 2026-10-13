@@ -488,13 +488,23 @@ class Probability:
                 resolved party indices.
 
         Returns:
-            The party indices, sorted.
+            The party indices, in the order the caller gave them.
+
+        Raises:
+            ValueError: If a label is unknown or an index is out of range.
         """
         if isinstance(marginal, str):
             return [self.labels.index(marginal)]
-        return sorted(
+        indices = [
             self.labels.index(m) if isinstance(m, str) else m for m in marginal
-        )
+        ]
+        for index in indices:
+            if not 0 <= index < self.n_parties:
+                raise ValueError(
+                    f"Invalid party index {index}; the scenario has "
+                    f"{self.n_parties} parties."
+                )
+        return indices
 
     def __call__(
         self,
@@ -544,15 +554,15 @@ class Probability:
                 )
         result = S.One
         for party, (proj, meas) in enumerate(zip(output_, input_, strict=True)):
-            if len(self.parties[party_indices[party]]) < meas + 1:
+            label = self.labels[party_indices[party]]
+            if meas < 0 or len(self.parties[party_indices[party]]) < meas + 1:
                 raise ValueError(
-                    f"Invalid measurement index {meas} for party "
-                    f"{self.labels[party]}"
+                    f"Invalid measurement index {meas} for party {label}"
                 )
-            if len(self.parties[party_indices[party]][meas]) < proj:
+            if proj < 0 or len(self.parties[party_indices[party]][meas]) < proj:
                 raise ValueError(
                     f"Invalid projection operator index {proj} for party "
-                    f"{self.labels[party]}"
+                    f"{label}"
                 )
             if len(self.parties[party_indices[party]][meas]) == proj:
                 # The last projector of the measurement is not part of the

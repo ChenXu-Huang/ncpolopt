@@ -32,6 +32,37 @@ __all__ = [
     "split_commutative_parts",
 ]
 
+#: Upper bound on fixpoint passes in :func:`apply_substitutions`; a rule
+#: set that keeps growing the word (e.g. ``A -> A*B``) raises instead of
+#: hanging the interpreter.
+_MAX_SUBSTITUTION_PASSES = 1000
+
+
+def _comm_factor_exponents(expr: Any) -> dict[Any, Any]:
+    """The base -> exponent map of a commutative product."""
+    exponents: dict[Any, Any] = {}
+    for factor in expr.as_ordered_factors():
+        base, exp = factor.as_base_exp()
+        exponents[base] = exponents.get(base, 0) + exp
+    return exponents
+
+
+def _comm_divides(monomial: Any, pattern: Any) -> bool:
+    """Whether the commutative pattern divides the commutative monomial."""
+    have = _comm_factor_exponents(monomial)
+    return all(
+        have.get(base, 0) >= exp
+        for base, exp in _comm_factor_exponents(pattern).items()
+    )
+
+
+def _comm_divide(monomial: Any, pattern: Any) -> Any:
+    """The commutative monomial with one occurrence of pattern removed."""
+    quotient = monomial
+    for factor in pattern.as_ordered_factors():
+        quotient /= factor
+    return quotient
+
 
 def split_commutative_parts(e: Any) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
     """Split an expression into its leading commutative and remaining parts.
@@ -221,12 +252,21 @@ def apply_substitutions(
             if not irrelevant:
                 substitutions[lhs] = rhs
     changed = True
+    iterations = 0
     while changed:
         for lhs, rhs in substitutions.items():
             monomial = fast_substitute(monomial, lhs, rhs)
         if original_monomial == monomial:
             changed = False
         original_monomial = monomial
+        iterations += 1
+        if iterations >= _MAX_SUBSTITUTION_PASSES:
+            raise RuntimeError(
+                f"Substitutions did not stabilize after "
+                f"{_MAX_SUBSTITUTION_PASSES} passes over {monomial}; the "
+                "rule set must be length-reducing (a rule like A -> A*B "
+                "grows the word forever)."
+            )
     return monomial
 
 
@@ -273,40 +313,58 @@ def fast_substitute(monomial: Any, old_sub: Any, new_sub: Any) -> Any:
         else:
             for comm_factor in comm_factors:
                 comm_monomial *= comm_factor
-            if old_comm_factors != ():
-                comm_old_sub = 1
-                for comm_factor in old_comm_factors:
-                    comm_old_sub *= comm_factor
-                comm_new_sub = 1
-                for comm_factor in new_comm_factors:
-                    comm_new_sub *= comm_factor
-                # NOTE: Pow-valued commutative patterns cannot use
-                # ``.subs`` reliably, so the factors are split by hand
-                # (a SymPy quirk the old package worked around).
-                if isinstance(comm_old_sub, Pow):
-                    old_base = comm_old_sub.base
-                    if comm_monomial.has(old_base):
-                        old_degree = comm_old_sub.exp
-                        new_monomial = 1
-                        match = False
-                        for factor in comm_monomial.as_ordered_factors():
-                            if factor.has(old_base):
-                                if isinstance(factor, Pow):
-                                    degree = factor.exp
-                                    if degree >= old_degree:
-                                        match = True
-                                        new_monomial *= (
-                                            old_base ** (degree - old_degree)
-                                            * comm_new_sub
-                                        )
-                                else:
-                                    new_monomial *= factor
-                            else:
-                                new_monomial *= factor
-                        if match:
-                            comm_monomial = new_monomial
-                else:
-                    comm_monomial = comm_monomial.subs(comm_old_sub, comm_new_sub)
+
+    comm_old_sub: Any = None
+    comm_new_sub: Any = None
+    if old_comm_factors != ():
+        comm_old_sub = 1
+        for comm_factor in old_comm_factors:
+            comm_old_sub *= comm_factor
+        comm_new_sub = 1
+        for comm_factor in new_comm_factors:
+            comm_new_sub *= comm_factor
+    # A rule with both a commutative and a noncommutative side replaces the
+    # whole pattern: the commutative side divides out of the monomial (one
+    # occurrence) and the replacement's commutative side multiplies in. A
+    # global .subs would double-count the replacement's commutative part.
+    mixed_rule = comm_old_sub is not None and old_ncomm_factors != ()
+    if mixed_rule and (
+        is_constant_term or not _comm_divides(comm_monomial, comm_old_sub)
+    ):
+        return monomial
+    if (
+        comm_old_sub is not None
+        and not mixed_rule
+        and comm_factors != ()
+        and not is_constant_term
+    ):
+        # NOTE: Pow-valued commutative patterns cannot use ``.subs``
+        # reliably, so the factors are split by hand (a SymPy quirk the
+        # old package worked around).
+        if isinstance(comm_old_sub, Pow):
+            old_base = comm_old_sub.base
+            if comm_monomial.has(old_base):
+                old_degree = comm_old_sub.exp
+                new_monomial_pow = 1
+                match = False
+                for factor in comm_monomial.as_ordered_factors():
+                    if factor.has(old_base):
+                        if isinstance(factor, Pow):
+                            degree = factor.exp
+                            if degree >= old_degree:
+                                match = True
+                                new_monomial_pow *= (
+                                    old_base ** (degree - old_degree)
+                                    * comm_new_sub
+                                )
+                        else:
+                            new_monomial_pow *= factor
+                    else:
+                        new_monomial_pow *= factor
+                if match:
+                    comm_monomial = new_monomial_pow
+        else:
+            comm_monomial = comm_monomial.subs(comm_old_sub, comm_new_sub)
     if ncomm_factors == ():
         return comm_monomial
     if old_ncomm_factors == ():
@@ -390,16 +448,34 @@ def fast_substitute(monomial: Any, old_sub: Any, new_sub: Any) -> Any:
             new_monomial = 1
             for var in new_var_list:
                 new_monomial *= var
-            new_monomial *= left_remainder * new_sub * right_remainder
+            if mixed_rule:
+                # The replacement's commutative part goes through the
+                # divide-and-multiply channel below; only its
+                # noncommutative side joins the word.
+                new_ncomm_sub = 1
+                if not isinstance(new_sub, (float, int, complex)):
+                    for factor in split_commutative_parts(new_sub)[1]:
+                        new_ncomm_sub *= factor
+                new_monomial *= left_remainder * new_ncomm_sub * right_remainder
+            else:
+                new_monomial *= left_remainder * new_sub * right_remainder
             for j in range(i + len(old_ncomm_factors), len(ncomm_factors)):
                 new_monomial *= ncomm_factors[j]
-            new_monomial *= comm_monomial
+            if mixed_rule:
+                new_monomial *= (
+                    _comm_divide(comm_monomial, comm_old_sub) * comm_new_sub
+                )
+            else:
+                new_monomial *= comm_monomial
             break
         # No match at this position: keep the leading factor and retry
         # from the next position.
         new_var_list.append(ncomm_factors[i])
     else:
         if not is_constant_term and comm_factors != ():
+            # The noncommutative part never matched: the rule does not
+            # fire, so the monomial keeps its (unsubstituted) commutative
+            # part.
             new_monomial = comm_monomial
             for factor in ncomm_factors:
                 new_monomial *= factor

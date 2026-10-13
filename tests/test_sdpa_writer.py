@@ -139,13 +139,20 @@ def test_read_sdpa_out_missing_values_is_invalid(tmp_path) -> None:
 
 
 def test_read_sdpa_out_status_phases() -> None:
-    """All SDPA phase markers map to their status strings."""
+    """All SDPA phase markers map onto the package status vocabulary."""
     from ncpolopt.sdpa_writer import _parse_phase
 
     assert _parse_phase("phase.value = pdOPT") == "optimal"
-    assert _parse_phase("phase.value = pFEAS") == "primal feasible"
-    assert _parse_phase("phase.value = dINF") == "infeasible"
+    assert _parse_phase("phase.value = pINF") == "infeasible"
+    assert _parse_phase("phase.value = pdINF") == "infeasible"
+    # Dual infeasibility is primal unboundedness, mirroring the other
+    # backends (and "noINFO" must not collide with the INF substring).
+    assert _parse_phase("phase.value = dINF") == "unbounded"
     assert _parse_phase("phase.value = pdUNBD") == "unbounded"
+    assert _parse_phase("phase.value = pFEAS") == "unknown"
+    assert _parse_phase("phase.value = dFEAS") == "unknown"
+    assert _parse_phase("phase.value = pdFEAS") == "unknown"
+    assert _parse_phase("phase.value = noINFO") == "unknown"
     assert _parse_phase("phase.value = ???") == "unknown"
 
 

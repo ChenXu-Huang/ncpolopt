@@ -844,7 +844,7 @@ class NpaRelaxation(Relaxation):
         A = self._process_equalities()
         if A.shape[0] == 0:
             return
-        if min(A.shape) != np.linalg.matrix_rank(A):
+        if np.linalg.matrix_rank(A) < A.shape[0]:
             logger.warning(
                 "Equality constraints are linearly dependent; results might "
                 "be incorrect."
@@ -868,12 +868,32 @@ class NpaRelaxation(Relaxation):
         rows: list[list[complex]] = []
         equalities = self.problem.equalities
         if equalities is not None:
-            for constraint in flatten([equalities]):
+            # Overrides align with the combined constraint list of
+            # compute_block_structure: inequalities, moment inequalities,
+            # then equalities.
+            n_inequalities = (
+                len(self.problem.inequalities)
+                if self.problem.inequalities is not None
+                else 0
+            )
+            if self.problem.momentinequalities is not None:
+                n_inequalities += len(self.problem.momentinequalities)
+            overrides = self.problem.localizing_monomials
+            for j, constraint in enumerate(flatten([equalities])):
                 if constraint.is_Relational:
                     constraint = convert_relational(constraint)
-                basis = _localizing_basis(
-                    constraint, self.problem.variables, self.monomial_sets, self.level
-                )
+                override = None
+                if overrides is not None:
+                    override = overrides[n_inequalities + j]
+                if override is not None:
+                    basis = list(override)
+                else:
+                    basis = _localizing_basis(
+                        constraint,
+                        self.problem.variables,
+                        self.monomial_sets,
+                        self.level,
+                    )
                 for row, column in _upper_triangle(len(basis)):
                     _, _, polynomial = moment_of_entry(
                         (row, column), basis, constraint, self._substitutions

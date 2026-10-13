@@ -75,9 +75,12 @@ def test_dual_block_shape(noncommutative_solution: Solution) -> None:
 
 
 def test_sos_decomposition(noncommutative_solution: Solution) -> None:
-    blocks = (0, 1)  # the moment block and the localizing block
-    sos = noncommutative_solution.sos_decomposition(blocks=blocks)
-    assert len(sos) == 2
+    # Only the moment block carries the moment basis; the localizing block
+    # would be mislabeled by it and is rejected.
+    with pytest.raises(RuntimeError, match="Cannot match block"):
+        noncommutative_solution.sos_decomposition(blocks=(0, 1))
+    sos = noncommutative_solution.sos_decomposition()
+    assert len(sos) == 1
     # Reconstructing the quadratic form of the moment block from its dual
     # matrix must reproduce the SOS term exactly.
     sdp = noncommutative_solution.sdp

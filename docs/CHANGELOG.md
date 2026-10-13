@@ -8,6 +8,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `fast_substitute` mixed rules: a rule with both commutative and
+  noncommutative sides (e.g. `x*A -> 2`) double-counted the replacement's
+  commutative part (`x*B` gave `4`, not `2`) and applied its commutative
+  side even when the noncommutative side never matched; the commutative
+  side now divides out of the monomial exactly once and the rule does not
+  fire when either side is absent (regression test in
+  `test_substitutions.py`).
+- `apply_substitutions` raises a clear error instead of hanging forever on
+  word-growing rule sets like `{A: A*B}` (capped fixpoint iteration).
+- `is_number_type` accepts NumPy scalar types (`np.int64`, `np.float32`,
+  ...) instead of raising `AttributeError`.
+- `Probability`: a marginal with out-of-order party labels (`['B', 'A']`)
+  was silently sorted, pairing outputs with the wrong parties; the caller's
+  order is now honored, negative and out-of-range indices raise
+  `ValueError`, and the error messages name the right party (regression
+  tests in `test_physics.py`).
+- `removeequalities` honors `localizing_monomials` overrides for the
+  equality rows (the elimination path always computed the automatic
+  basis), and a `localizing_monomials` list of the wrong length raises a
+  clear `ValueError` instead of a bare `IndexError`; the dependent-rows
+  warning now compares the rank against the row count.
+- `sos_decomposition` defaults to the moment blocks (other blocks were
+  silently labeled with the moment basis) and raises a clear error when a
+  block cannot be matched to the basis (nested or scaled bases).
+- SDPA backend: a nonzero exit code of the binary raises `SolverError`
+  with the return code, and a missing output file no longer surfaces as a
+  bare `OSError`; the `phase.value` mapping uses exact tokens (so
+  `noINFO` is no longer misread as `infeasible`, and `dINF` maps to
+  `unbounded` like the other backends). New tests drive a mock `sdpa`
+  binary, covering the subprocess path without the real solver.
+- PICOS backend: solver failures (`SolutionFailure`) and unsolved value
+  reads (`NotValued`) map onto `status="unknown"`/`"infeasible"` instead
+  of raising; `"dual feasible"` no longer reports `"optimal"`, and
+  `"near-optimal"` maps to `"optimal"`.
+- `solver="scs"` actually drives SCS through CVXPY (the kind was
+  registered to the bare CVXPY backend, which picks CLARABEL first).
+- `class_moment_equalities` rejects unnormalized problems (its constant
+  equalities silently bound to the free normalization variable).
+- `SteeringHierarchy` rejects `extramomentmatrices` (the copy/new blocks
+  would not be scaled by `matrix_var_dim`), and its variable-group reuse
+  looks up the recorded ids instead of assuming consecutive numbering.
+- The RDM circulant layouts apply the substitution rules to their words
+  (the standard path does), so reduced words share the variables of the
+  reduced moments instead of splitting them.
+
 - SDPA complex path: `write_dat_s` wrote the doubled objective as
   `[Re(c), Re(c)]` (a complex coefficient vanished from the file, and real
   coefficients gave the imaginary variables spurious weight) and wrote the

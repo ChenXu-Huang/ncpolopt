@@ -39,8 +39,10 @@ _COMPLEX_DTYPE = np.dtype(np.complex128)
 #: picos statuses mapped onto the package status vocabulary.
 _STATUS_MAP: dict[str, str] = {
     "optimal": "optimal",
+    "near-optimal": "optimal",
     "primal feasible": "optimal",
-    "dual feasible": "optimal",
+    # Dual feasibility alone certifies nothing about optimality.
+    "dual feasible": "unknown",
     "infeasible": "infeasible",
     "primal infeasible": "infeasible",
     "dual infeasible": "unbounded",
@@ -194,6 +196,8 @@ def solve_with_picos(problem: SdpProblem, settings: SolverSettings) -> SolverRes
         UnsupportedSdpError: If the problem cannot be mapped (see
             :func:`convert_to_picos`).
     """
+    import picos as pic
+
     model = convert_to_picos(problem)
     P = model.problem
     options = dict(settings.solver_options)
@@ -207,17 +211,38 @@ def solve_with_picos(problem: SdpProblem, settings: SolverSettings) -> SolverRes
                 f"Unknown PICOS option {name!r}."
             ) from error
     tstart = time.monotonic()
-    solution = P.solve()
+    try:
+        solution = P.solve()
+    except pic.SolutionFailure:
+        # The solver gave up (numerical trouble, or it could not certify
+        # either side); report instead of leaking the backend exception.
+        return SolverResult(
+            status="unknown",
+            primal=float("nan"),
+            dual=float("nan"),
+            solution_time=time.monotonic() - tstart,
+            raw=P,
+        )
     solution_time = time.monotonic() - tstart
     picos_status = solution.status or "unknown"
     status = _STATUS_MAP.get(picos_status, picos_status)
     locations = [problem.column_locations[k] for k in range(1, problem.n_vars + 1)]
-    x = np.array([model.moment.value[i0, j0] for _, i0, j0 in locations])
+    try:
+        x = np.array([model.moment.value[i0, j0] for _, i0, j0 in locations])
+        y_mat = tuple(
+            np.atleast_2d(np.asarray(P.get_constraint(i).dual))
+            for i in range(len(P.constraints))
+        )
+    except pic.NotValued:
+        # An infeasible/unbounded model has no solution values to read.
+        return SolverResult(
+            status=status,
+            primal=float("nan"),
+            dual=float("nan"),
+            solution_time=solution_time,
+            raw=P,
+        )
     x_mat = block_matrices(problem, x)
-    y_mat = tuple(
-        np.asarray(P.get_constraint(i).dual)
-        for i in range(len(P.constraints))
-    )
     return SolverResult(
         status=status,
         primal=float(np.real(np.dot(problem.obj, x))) + problem.constant_term,

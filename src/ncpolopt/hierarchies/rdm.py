@@ -27,6 +27,7 @@ from sympy.physics.quantum.dagger import Dagger
 
 from ..monomials import ncdegree
 from ..relaxation import NpaRelaxation
+from ..substitutions import apply_substitutions
 
 if TYPE_CHECKING:  # NOTE: problem.py imports the relaxation lazily.
     from ..problem import Problem
@@ -153,7 +154,7 @@ class RdmHierarchy(NpaRelaxation):
                         i = n * block_row + row
                         j = n * block_col + column
                         self._push_monomial(
-                            Dagger(monomials[i]) * monomials[j],
+                            self._reduce(Dagger(monomials[i]) * monomials[j]),
                             block_index,
                             i,
                             j,
@@ -194,7 +195,7 @@ class RdmHierarchy(NpaRelaxation):
                             i = offset + n * block_row + row
                             j = offset + n * block_col + column
                             self._push_monomial(
-                                Dagger(monomials[i]) * monomials[j],
+                                self._reduce(Dagger(monomials[i]) * monomials[j]),
                                 block_index,
                                 i,
                                 j,
@@ -208,12 +209,30 @@ class RdmHierarchy(NpaRelaxation):
                         i = n * block_row + row
                         j = n * n + n * block_col + column
                         self._push_monomial(
-                            Dagger(monomials[i]) * monomials[j],
+                            self._reduce(Dagger(monomials[i]) * monomials[j]),
                             block_index,
                             i,
                             j,
                         )
         return block_index + 1
+
+    def _reduce(self, monomial: Any) -> Any:
+        """Apply the substitution rules, mirroring the standard path.
+
+        The circulant layouts build their words directly; without the
+        reduction the moment variables would be created for unreduced
+        words while the objective and constraints resolve the reduced
+        ones.
+
+        Args:
+            monomial: The word ``Dagger(m_i) * m_j`` of the entry.
+
+        Returns:
+            The reduced monomial.
+        """
+        return apply_substitutions(
+            monomial, self._substitutions, self._pure_substitution_rules
+        )
 
     def _grid_size(self, monomials: list[Any]) -> int:
         """The sub-block grid size of a square 4th-moment basis.

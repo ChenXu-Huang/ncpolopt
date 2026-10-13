@@ -208,6 +208,21 @@ def compute_block_structure(
     # Moment equalities are NOT part of the generic list: they get their
     # scalar block pair from the dedicated loop below, and adding them here
     # would double their blocks.
+    n_constraints = len(constraints)
+    if removeequalities and equalities is not None:
+        # Equalities produce no blocks when eliminated, but they still need
+        # their localizing basis for the elimination rows, so the override
+        # list covers them.
+        n_constraints += len(list(flatten([equalities])))
+    if localizing_monomials is not None and len(localizing_monomials) != (
+        n_constraints
+    ):
+        raise ValueError(
+            f"localizing_monomials has {len(localizing_monomials)} entries, "
+            f"but there are {n_constraints} polynomial constraints "
+            "(inequalities, moment inequalities, then equalities; use None "
+            "entries for automatic bases)."
+        )
 
     for k, raw_constraint in enumerate(constraints):
         constraint = as_moment_expr(raw_constraint)

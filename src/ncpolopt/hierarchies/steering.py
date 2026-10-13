@@ -74,10 +74,19 @@ class SteeringHierarchy(NpaRelaxation):
                 f"matrix_var_dim must be a positive integer, got "
                 f"{matrix_var_dim}."
             )
+        if problem.extramomentmatrices:
+            raise ValueError(
+                "The steering hierarchy does not support extra moment "
+                "matrices: the copy/new blocks would not be scaled by "
+                "matrix_var_dim."
+            )
         self.matrix_var_dim = matrix_var_dim
-        #: The group-start variables whose sub-blocks already exist; a
-        #: second occurrence of the same moment reuses the whole group.
-        self._steering_groups: set[int] = set()
+        #: The group-start variable -> the variable ids of its sub-block
+        #: grid, in grid order. A second occurrence of the same moment
+        #: reuses the whole group; the ids are recorded because moment
+        #: substitutions can interleave other variables into the numbering
+        #: (a group is not always ``d**2`` consecutive ids).
+        self._steering_groups: dict[int, tuple[int, ...]] = {}
         super().__init__(problem, level, removeequalities=removeequalities)
 
     def _compute_block_structure(self, **kwargs: Any) -> BlockStructure:
@@ -142,11 +151,14 @@ class SteeringHierarchy(NpaRelaxation):
     ) -> None:
         """Create (or reuse) the variable group of one moment's sub-block.
 
-        On first sight the group occupies the ``d**2`` consecutive
-        variables ``k + r*d + c`` in grid order; the lower-triangle ones
-        stay free (phantoms) and the hermitian mirror of the complex
-        embedding fills their positions. Later occurrences of the same
-        moment only write entries again, sharing the whole group.
+        On first sight the group gets one fresh variable per sub-block grid
+        position; the lower-triangle ones stay free (phantoms) and the
+        hermitian mirror of the complex embedding fills their positions.
+        Later occurrences of the same moment only write entries again,
+        sharing the whole group. The variable ids are looked up from the
+        recorded group, not recomputed as ``k + position``: a moment
+        substitution whose value introduces new moments interleaves those
+        variables into the numbering.
 
         Args:
             k: The group's first variable (the moment's resolved variable).
@@ -156,29 +168,30 @@ class SteeringHierarchy(NpaRelaxation):
             coeff: The scalar factor of the moment.
         """
         d = self.matrix_var_dim
-        fresh = k not in self._steering_groups
-        for r in range(d):
-            for c in range(d):
-                position = r * d + c
-                if position == 0:
-                    variable = k
-                elif fresh:
-                    variable = self._builder.new_variable(
+        group = self._steering_groups.get(k)
+        if group is None:
+            group = tuple(
+                [k]
+                + [
+                    self._builder.new_variable(
                         None, block, row_a * d + r, column_a * d + c
                     )
-                else:
-                    variable = k + position
-                if row_a * d + r <= column_a * d + c:
-                    # Off the sub-block diagonal the coefficient carries a
-                    # unit imaginary part, which the complex embedding turns
-                    # into the hermitian mirror below the diagonal.
-                    imag_zero = 1 if (row_a != column_a or r != c) else 0
-                    value = coeff * (1 + 1j * imag_zero)
-                    self._builder.add_entry(
-                        block, row_a * d + r, column_a * d + c, variable, value
-                    )
-        if fresh:
-            self._steering_groups.add(k)
+                    for position in range(1, d * d)
+                    for r, c in [divmod(position, d)]
+                ]
+            )
+            self._steering_groups[k] = group
+        for position, variable in enumerate(group):
+            r, c = divmod(position, d)
+            if row_a * d + r <= column_a * d + c:
+                # Off the sub-block diagonal the coefficient carries a
+                # unit imaginary part, which the complex embedding turns
+                # into the hermitian mirror below the diagonal.
+                imag_zero = 1 if (row_a != column_a or r != c) else 0
+                value = coeff * (1 + 1j * imag_zero)
+                self._builder.add_entry(
+                    block, row_a * d + r, column_a * d + c, variable, value
+                )
 
     def set_objective(self, objective: Any | None) -> None:
         """Set the objective of the relaxation.

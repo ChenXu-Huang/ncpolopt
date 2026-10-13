@@ -13,6 +13,7 @@ backends handle those.
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -193,4 +194,26 @@ def solve_with_cvxpy(
 
 
 register(SolverKind.CVXPY, solve_with_cvxpy)
-register(SolverKind.SCS, solve_with_cvxpy)
+
+
+def solve_with_scs(problem: SdpProblem, settings: SolverSettings) -> SolverResult:
+    """Solve through the CVXPY backend with the SCS solver pinned.
+
+    Registering the bare CVXPY backend under ``"scs"`` would silently pick
+    the default preference order (CLARABEL first); the pin makes the
+    explicit selection mean what it says.
+
+    Args:
+        problem: The frozen SDP problem.
+        settings: Backend knobs; a ``"solver"`` solver option overrides the
+            SCS pin.
+
+    Returns:
+        The solver result in the canonical conventions.
+    """
+    options = dict(settings.solver_options)
+    options.setdefault("solver", "SCS")
+    return solve_with_cvxpy(problem, dataclasses.replace(settings, solver_options=options))
+
+
+register(SolverKind.SCS, solve_with_scs)

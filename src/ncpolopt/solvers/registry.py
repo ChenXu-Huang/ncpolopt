@@ -46,6 +46,7 @@ _REGISTRY: dict[SolverKind, SolverBackend] = {}
 
 _INSTALL_HINTS: dict[SolverKind, str] = {
     SolverKind.CVXPY: "uv pip install ncpolopt[cvxpy]",
+    SolverKind.SCS: "uv pip install scs",
     SolverKind.MOSEK: "uv pip install ncpolopt[mosek]",
     SolverKind.CVXOPT: "uv pip install ncpolopt[cvxopt]",
     SolverKind.SDPA: "point SolverSettings.sdpa_executable at an SDPA binary",

@@ -167,8 +167,17 @@ def class_moment_equalities(
     Raises:
         ValueError: If a non-pinned entry monomial (or its adjoint) has
             no moment-matrix occurrence, or its variable was created
-            outside block 0.
+            outside block 0, or the problem is not normalized (a constant
+            equality would silently bind to the free normalization
+            variable instead of the constant).
     """
+    if not problem.normalized:
+        raise ValueError(
+            "class_moment_equalities requires a normalized problem: the "
+            "constant side of the emitted equalities is expressed through "
+            "the pinned (0, 0) moment, which is a free variable when "
+            "normalized=False."
+        )
     substitutions = (
         dict(problem.substitutions) if problem.substitutions is not None else {}
     )

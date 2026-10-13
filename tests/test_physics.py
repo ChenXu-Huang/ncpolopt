@@ -13,6 +13,7 @@ from sympy.physics.quantum.dagger import Dagger
 
 from ncpolopt.expressions import flatten
 from ncpolopt.physics import (
+    Probability,
     bosonic_constraints,
     fermionic_constraints,
     get_neighbors,
@@ -73,3 +74,28 @@ def test_magnetization(solver_kind: SolverKind) -> None:
     )
     magnetization = solution.monomial_value(s)
     assert abs(magnetization - 0.021325317328560453) < 10e-5
+
+
+def test_marginal_follows_caller_party_order() -> None:
+    """An out-of-order marginal is not silently re-sorted.
+
+    Regression: ``['B', 'A']`` was sorted to ``[0, 1]``, pairing the
+    outputs with the wrong parties without any error.
+    """
+    P = Probability([2, 2], [2, 2])
+    # Output 0 on Bob's input 0, output 1 on Alice's input 1.
+    result = P([0, 1], [0, 1], ["B", "A"])
+    A0 = P.parties[0][1][0]
+    B0 = P.parties[1][0][0]
+    assert result == B0 * (1 - A0) or result == (1 - A0) * B0
+
+
+def test_marginal_rejects_bad_indices() -> None:
+    """Negative and out-of-range indices raise instead of misbehaving."""
+    P = Probability([2, 2], [2, 2])
+    with pytest.raises(ValueError, match="projection"):
+        P([-1], [0], "A")
+    with pytest.raises(ValueError, match="measurement"):
+        P([0], [-1], "A")
+    with pytest.raises(ValueError, match="party index"):
+        P([0], [0], [5])

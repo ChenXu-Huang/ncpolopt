@@ -195,3 +195,41 @@ def test_pure_commutative_rule_end_to_end() -> None:
     assert relaxation.monomial_sets == [[S.One, A, Dagger(A)]]
     # The objective x*A reduces to A: coefficient 1.0 on its moment.
     assert list(relaxation.sdp.obj) == [1.0, 0.0, 0.0, 0.0]
+
+
+def test_mixed_rule_replaces_whole_pattern() -> None:
+    """A rule with commutative and noncommutative parts fires as a unit.
+
+    Regression: the commutative side was substituted globally AND the
+    replacement multiplied in full (``fast_substitute(x*B, x*B, 2)`` gave
+    ``4``), and the commutative side fired even when the noncommutative
+    side never matched.
+    """
+    A = generate_operators("A", 1)[0]
+    B = generate_operators("B", 1)[0]
+    x = Symbol("x")
+    y = Symbol("y")
+    assert fast_substitute(x * B, x * B, 2) == 2
+    assert fast_substitute(x * A * B, x * A, 2) == 2 * B
+    assert fast_substitute(x**2 * A, x * A, 2) == 2 * x
+    assert fast_substitute(x * A, x * A, y * B) == y * B
+    # No fire: noncommutative side does not match, or the commutative side
+    # is absent.
+    assert fast_substitute(x * A, x * B, 2) == x * A
+    assert fast_substitute(A, x * A, 2) == A
+
+
+def test_apply_substitutions_raises_on_nonconverging_rules() -> None:
+    """A word-growing rule set raises instead of hanging."""
+    import ncpolopt.substitutions as substitutions_module
+
+    A = generate_operators("A", 1)[0]
+    B = generate_operators("B", 1)[0]
+    monkeypatch = substitutions_module  # cap via module constant
+    original = monkeypatch._MAX_SUBSTITUTION_PASSES
+    monkeypatch._MAX_SUBSTITUTION_PASSES = 10
+    try:
+        with pytest.raises(RuntimeError, match="did not stabilize"):
+            apply_substitutions(A, {A: A * B})
+    finally:
+        monkeypatch._MAX_SUBSTITUTION_PASSES = original

@@ -298,3 +298,26 @@ def test_insertion_relaxation_solves(solver_kind: SolverKind) -> None:
     # <g> over g >= 0 with pinned S-moments only is 0; the class relations
     # keep the relaxation bounded.
     assert solution.primal == pytest.approx(0.0, abs=1e-5)
+
+
+def test_class_moment_equalities_requires_normalized() -> None:
+    """The constant side of the class equalities needs the pinned (0,0).
+
+    Regression: under normalized=False the constant silently resolved to
+    the free normalization variable, weakening the relation.
+    """
+    model = _model()
+    problem = nc.Problem(
+        [model["p0"], model["p1"], model["g"]],
+        objective=model["g"],
+        normalized=False,
+    )
+    with pytest.raises(ValueError, match="normalized"):
+        class_moment_equalities(
+            problem,
+            1,
+            inserted=[(model["g"], lambda m: m)],
+            row_words=model["basis"],
+            col_words=model["basis"],
+            word_matrix=model["word_matrix"],
+        )

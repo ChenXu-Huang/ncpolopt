@@ -84,6 +84,23 @@ def parse_solution_matrix(iterator: Iterable[str]) -> list[np.ndarray]:
     return matrices
 
 
+#: SDPA ``phase.value`` tokens mapped onto the package status vocabulary.
+#: Dual infeasibility means primal unboundedness for the minimization,
+#: mirroring the other backends; feasibility without optimality is
+#: reported as ``unknown`` (no certificate).
+_PHASE_MAP: dict[str, str] = {
+    "pdOPT": "optimal",
+    "pFEAS": "unknown",
+    "dFEAS": "unknown",
+    "pdFEAS": "unknown",
+    "pINF": "infeasible",
+    "dINF": "unbounded",
+    "pdINF": "infeasible",
+    "noINFO": "unknown",
+    "pdUNBD": "unbounded",
+}
+
+
 def _parse_phase(line: str) -> str:
     """Map an SDPA ``phase.value`` line onto the status vocabulary.
 
@@ -91,21 +108,10 @@ def _parse_phase(line: str) -> str:
         line: The ``phase.value = ...`` line of the output file.
 
     Returns:
-        The canonical status string.
+        The canonical status string; unknown tokens map to ``"unknown"``.
     """
-    if "pdOPT" in line:
-        return "optimal"
-    if "pFEAS" in line:
-        return "primal feasible"
-    if "pdFEAS" in line:
-        return "primal-dual feasible"
-    if "dFEAS" in line:
-        return "dual feasible"
-    if "INF" in line:
-        return "infeasible"
-    if "UNBD" in line:
-        return "unbounded"
-    return "unknown"
+    token = line.split("=", 1)[1].strip() if "=" in line else ""
+    return _PHASE_MAP.get(token, "unknown")
 
 
 def read_sdpa_out(filename: str) -> SdpaOutcome:

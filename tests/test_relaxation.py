@@ -408,3 +408,37 @@ def test_complex_objective_is_detected() -> None:
     relaxation = problem.relaxation(level=1)
     assert relaxation.complex_matrix is True
     assert relaxation.sdp.blocks[0].coo.dtype == np.complex128
+
+
+def test_elimination_honors_localizing_monomials_override() -> None:
+    """removeequalities uses the override basis for the equality rows.
+
+    Regression: _process_equalities always computed the automatic basis,
+    silently ignoring the user's localizing_monomials.
+    """
+    X = generate_operators("x", 2, hermitian=True)
+    problem = Problem(
+        X,
+        equalities=[X[0] ** 2 - X[1]],
+        localizing_monomials=[[S.One]],
+    )
+    overridden = problem.relaxation(level=2, removeequalities=True)
+    automatic = Problem(
+        X, equalities=[X[0] ** 2 - X[1]]
+    ).relaxation(level=2, removeequalities=True)
+    # The override contributes one equality row (the constraint at the
+    # trivial basis), the automatic basis six (the upper triangle over
+    # {1, x0, x1}), eliminating fewer variables.
+    assert overridden.sdp.n_vars > automatic.sdp.n_vars
+
+
+def test_localizing_monomials_length_mismatch_raises() -> None:
+    """A short localizing_monomials list is a clear error, not IndexError."""
+    X = generate_operators("x", 2, hermitian=True)
+    problem = Problem(
+        X,
+        inequalities=[X[0], X[1]],
+        localizing_monomials=[[S.One]],
+    )
+    with pytest.raises(ValueError, match="localizing_monomials"):
+        problem.relaxation(level=2)

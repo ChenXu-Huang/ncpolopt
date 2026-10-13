@@ -7,6 +7,7 @@ import cycles.
 
 from __future__ import annotations
 
+import numbers
 from typing import Any
 
 from sympy import I, adjoint, conjugate
@@ -53,7 +54,7 @@ def is_number_type(exp: Any) -> bool:
     Returns:
         True for int/float/complex literals and SymPy numeric expressions.
     """
-    return isinstance(exp, (int, float, complex)) or exp.is_number
+    return isinstance(exp, numbers.Number) or getattr(exp, "is_number", False)
 
 
 def is_adjoint(exp: Any) -> bool:

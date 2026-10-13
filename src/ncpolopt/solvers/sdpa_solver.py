@@ -71,12 +71,24 @@ def solve_with_sdpa(problem: SdpProblem, settings: SolverSettings) -> SolverResu
                 raise ValueError(f"Unknown parameter for SDPA: {key}")
         tstart = time.monotonic()
         if settings.verbose:
-            subprocess.run(command_line)
+            completed = subprocess.run(command_line, check=False)
         else:
             with open(os.devnull, "w") as devnull:
-                subprocess.run(command_line, stdout=devnull, stderr=devnull)
+                completed = subprocess.run(
+                    command_line, check=False, stdout=devnull, stderr=devnull
+                )
         solution_time = time.monotonic() - tstart
-        parsed = read_sdpa_out(out_filename)
+        if completed.returncode != 0:
+            raise SolverError(
+                f"The SDPA binary exited with return code "
+                f"{completed.returncode}."
+            )
+        try:
+            parsed = read_sdpa_out(out_filename)
+        except OSError as error:
+            raise SolverError(
+                f"SDPA did not produce a readable output file: {error}"
+            ) from error
     x_mat = parsed.x_mat
     y_mat = parsed.y_mat
     if any(block.coo.dtype == np.complex128 for block in problem.blocks):

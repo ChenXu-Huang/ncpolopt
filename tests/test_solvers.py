@@ -183,3 +183,97 @@ def test_picos_rejects_complex_sdps() -> None:
     problem = Problem([X], objective=X, complex_matrix=True)
     with pytest.raises(UnsupportedSdpError, match="complex"):
         problem.solve(1, solver=SolverKind.CVXOPT)
+
+
+@pytest.mark.skipif(not requires("scs"), reason="scs is not installed")
+def test_scs_selection_uses_scs() -> None:
+    """solver='scs' drives SCS, not the CVXPY default preference order.
+
+    Regression: the SCS kind was registered to the bare CVXPY backend,
+    which picks CLARABEL whenever it is installed.
+    """
+    from typing import Any, cast
+
+    solution = _basic_problem().solve(2, solver=SolverKind.SCS)
+    assert solution.status == "optimal"
+    assert abs(solution.primal + 0.75) < 1e-3
+    raw = cast(Any, solution.result.raw)
+    assert raw.solver_stats.solver_name == "SCS"
+
+
+@pytest.mark.skipif(not requires("picos"), reason="picos is not installed")
+def test_cvxopt_infeasible_returns_status() -> None:
+    """An infeasible model yields a status, not a backend exception.
+
+    Regression: P.solve() and the value reads leaked picos exceptions
+    (SolutionFailure, NotValued) instead of reporting the outcome.
+    """
+    X = generate_operators("X", 1, hermitian=True)
+    # x >= 1 and x <= -2 cannot hold at once.
+    problem = Problem(X, objective=X[0], inequalities=[X[0] - 1, -X[0] - 2])
+    solution = problem.solve(1, solver=SolverKind.CVXOPT)
+    assert solution.status in {"infeasible", "unknown"}
+
+
+def _fake_sdpa(tmp_path, out_text: str | None) -> str:
+    """A fake SDPA binary: fails without output, or writes a canned .out."""
+    import os
+    import stat
+
+    script = tmp_path / "sdpa-fake"
+    if out_text is None:
+        script.write_text("#!/bin/sh\nexit 1\n")
+    else:
+        script.write_text(
+            "#!/bin/sh\n"
+            'out=""\n'
+            "while [ $# -gt 0 ]; do\n"
+            '  if [ "$1" = "-o" ]; then out="$2"; fi\n'
+            "  shift\n"
+            "done\n"
+            f"cat > \"$out\" <<'OUTEOF'\n{out_text}OUTEOF\n"
+        )
+    if os.name == "nt":
+        pytest.skip("the fake SDPA binary is a shell script")
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    return str(script)
+
+
+def test_sdpa_nonzero_exit_raises_solver_error(tmp_path) -> None:
+    """A crashing SDPA binary raises SolverError, not a bare parse error."""
+    settings = SolverSettings(sdpa_executable=_fake_sdpa(tmp_path, None))
+    with pytest.raises(SolverError, match="return code"):
+        _basic_problem().solve(2, solver=SolverKind.SDPA, settings=settings)
+
+
+def test_sdpa_mock_binary_roundtrip(tmp_path) -> None:
+    """The SDPA path end to end with a canned solver output."""
+    # The problem's blocks are 6x6 and 3x3; the canned output matches.
+    row6 = "{" + ", ".join(["1.0"] + ["0.0"] * 5) + "}"
+    row3 = "{" + ", ".join(["1.0"] + ["0.0"] * 2) + "}"
+    zeros6 = "{" + ", ".join(["0.0"] * 6) + "}"
+    zeros3 = "{" + ", ".join(["0.0"] * 3) + "}"
+    xmat = "{{" + f"{row6[1:]}\n" + f"{zeros6}\n" * 4 + zeros6 + "}\n"
+    xmat3 = "{{" + f"{row3[1:]}\n" + f"{zeros3}\n" + zeros3 + "}\n"
+    out_text = (
+        "objValPrimal = 1.5000000000e+00\n"
+        "objValDual = 1.4999999999e+00\n"
+        "phase.value = pdOPT\n"
+        "xMat =\n"
+        "{\n"
+        + xmat
+        + xmat3
+        + "}\n"
+        "yMat =\n"
+        "{\n"
+        + xmat
+        + xmat3
+        + "}\n"
+    )
+    settings = SolverSettings(sdpa_executable=_fake_sdpa(tmp_path, out_text))
+    solution = _basic_problem().solve(2, solver=SolverKind.SDPA, settings=settings)
+    assert solution.status == "optimal"
+    assert solution.primal == pytest.approx(1.5)
+    assert solution.dual == pytest.approx(1.5)
+    assert solution.x_mat[0].shape == (6, 6)
+    assert solution.y_mat[1].shape == (3, 3)
