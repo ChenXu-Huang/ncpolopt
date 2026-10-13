@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-10-13
+
 ### Fixed
 
 - `fast_substitute` mixed rules: a rule with both commutative and
@@ -322,4 +324,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 [0.1.0]: https://github.com/ChenXu-Huang/ncpolopt/releases/tag/v0.1.0
 [0.2.0]: https://github.com/ChenXu-Huang/ncpolopt/compare/v0.1.0...v0.2.0
+[0.2.2]: https://github.com/ChenXu-Huang/ncpolopt/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/ChenXu-Huang/ncpolopt/compare/v0.2.0...v0.2.1
