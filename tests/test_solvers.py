@@ -15,6 +15,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
+from conftest import _LICENSED_MOSEK, licensed_mosek
 from ncpolopt.problem import Problem
 from ncpolopt.solvers.base import (
     SolverError,
@@ -67,7 +68,7 @@ def test_sdpa_wrong_executable_raises_solver_error() -> None:
         _basic_problem().solve(2, solver=SolverKind.SDPA, settings=settings)
 
 
-@pytest.mark.skipif(not requires("mosek"), reason="mosek is not installed")
+@licensed_mosek
 def test_mosek_solves_basic_problem() -> None:
     """The MOSEK status map matches the installed MOSEK version's enum.
 
@@ -76,16 +77,12 @@ def test_mosek_solves_basic_problem() -> None:
     status dict raised ``AttributeError`` right after the solve. Requires
     a licensed MOSEK.
     """
-    from conftest import _licensed_mosek
-
-    if not _licensed_mosek():
-        pytest.skip("MOSEK cannot acquire a license")
     solution = _basic_problem().solve(2, solver=SolverKind.MOSEK)
     assert solution.status == "optimal"
     assert abs(solution.primal + 0.75) < 10e-5
 
 
-@pytest.mark.skipif(not requires("mosek"), reason="mosek is not installed")
+@licensed_mosek
 def test_mosek_conversion() -> None:
     """The task carries one constraint per variable and one barvar per block."""
     import mosek
@@ -93,26 +90,20 @@ def test_mosek_conversion() -> None:
     from ncpolopt.solvers.mosek_solver import convert_to_mosek
 
     relaxation = _basic_problem().relaxation(2)
-    try:
-        task = convert_to_mosek(relaxation.sdp)
-    except Exception:
-        pytest.skip("MOSEK refuses to build a task without a license")
+    task = convert_to_mosek(relaxation.sdp)
     assert task.getnumcon() == relaxation.sdp.n_vars
     assert task.getnumbarvar() == len(relaxation.sdp.blocks)
     assert task.getobjsense() == mosek.objsense.minimize
 
 
-@pytest.mark.skipif(not requires("mosek"), reason="mosek is not installed")
+@licensed_mosek
 def test_mosek_parameter_errors_are_solver_errors() -> None:
     """Unknown parameter names raise SolverError (bug #7: eval() is gone)."""
     import mosek
 
     from ncpolopt.solvers.mosek_solver import _set_parameter
 
-    try:
-        task = mosek.Env().Task(0, 0)
-    except Exception:
-        pytest.skip("MOSEK refuses to create a task without a license")
+    task = mosek.Env().Task(0, 0)
     with pytest.raises(SolverError, match="No MOSEK parameter"):
         _set_parameter(task, "iparam.MSK_IPAR_NO_SUCH_PARAM", 1)
 
@@ -321,6 +312,12 @@ def test_cvxpy_verbose_and_default_fallback(monkeypatch) -> None:
     """The verbose knob forwards; without known solvers CVXPY picks one."""
     import cvxpy
 
+    # NOTE: CVXPY's own default solver selection is not affected by the
+    # monkeypatch below and picks MOSEK whenever it is installed (see the
+    # note on _DEFAULT_SOLVERS in cvxpy_solver.py); without a license the
+    # fallback solve raises mosek.Error instead of solving.
+    if "MOSEK" in cvxpy.installed_solvers() and not _LICENSED_MOSEK:
+        pytest.skip("CVXPY's default would pick a license-less MOSEK")
     monkeypatch.setattr(
         cvxpy, "installed_solvers", lambda: ["NOT_A_REAL_SOLVER"]
     )
@@ -354,7 +351,7 @@ def test_dual_value_skips_missing_blocks() -> None:
     assert dual_value(sdp, empty) == sdp.constant_term
 
 
-@pytest.mark.skipif(not requires("mosek"), reason="mosek is not installed")
+@licensed_mosek
 def test_mosek_parameter_namespaces() -> None:
     """Prefixed and type-inferred MOSEK parameters all land."""
     import mosek
@@ -362,10 +359,7 @@ def test_mosek_parameter_namespaces() -> None:
 
     from ncpolopt.solvers.mosek_solver import _set_parameter
 
-    try:
-        task = mosek.Env().Task(0, 0)
-    except Exception:
-        pytest.skip("MOSEK refuses to create a task without a license")
+    task = mosek.Env().Task(0, 0)
     _set_parameter(task, "mosek.iparam.max_num_warnings", 1)
     _set_parameter(task, "iparam.max_num_warnings", 1)
     _set_parameter(task, "dparam.intpnt_tol_rel_gap", 1e-7)
@@ -378,7 +372,7 @@ def test_mosek_parameter_namespaces() -> None:
         _set_parameter(task, "max_num_warnings", b"bytes")
 
 
-@pytest.mark.skipif(not requires("mosek"), reason="mosek is not installed")
+@licensed_mosek
 def test_mosek_verbose_and_params_solve() -> None:
     """A verbose solve with parameters exercises the stream printer."""
     settings = SolverSettings(

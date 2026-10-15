@@ -34,6 +34,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from conftest import licensed_mosek
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "examples"))
 
 from quantum_memory import common
@@ -322,6 +324,7 @@ def test_operator_relaxation_exact() -> None:
     assert value == pytest.approx(1 / 3, abs=1e-4)
 
 
+@licensed_mosek
 def test_operator_relaxation_exact_4out() -> None:
     """The four-output operator relaxation attains p as well.
 
@@ -329,13 +332,8 @@ def test_operator_relaxation_exact_4out() -> None:
     CLARABEL's per-cone memory, so the test requires MOSEK (skipped when
     no MOSEK with a usable license is installed).
     """
-    cp = pytest.importorskip("cvxpy")
-    if "MOSEK" not in cp.installed_solvers():
-        pytest.skip("MOSEK not installed")
-    try:
-        value = common.operator_relaxation_value(0.5, n_outputs=4, level=2, solver="MOSEK")
-    except Exception as exc:
-        pytest.skip(f"MOSEK unusable: {exc}")
+    pytest.importorskip("cvxpy")
+    value = common.operator_relaxation_value(0.5, n_outputs=4, level=2, solver="MOSEK")
     assert value == pytest.approx(0.5, abs=1e-4)
     assert value <= 0.5 + 1e-5
 
@@ -446,6 +444,7 @@ def _npa_tau_4out_value() -> float:
 
 
 @pytest.mark.slow
+@licensed_mosek
 def test_npa_tau_factored_certified_4out() -> None:
     """The 4-output factored NPA-tau L2 relaxation certifies the exact p.
 

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from ncpolopt.solvers.base import SolverKind
-from ncpolopt.solvers.registry import available
+from ncpolopt.solvers.registry import available, requires
 
 
 def _licensed_mosek() -> bool:
@@ -38,6 +38,21 @@ def _licensed_mosek() -> bool:
         return False
 
 
+_LICENSED_MOSEK: bool = _licensed_mosek()
+"""Whether MOSEK can acquire a license here, probed once per session.
+
+The probe builds a ``mosek.Env``; repeating it per test is wasted work,
+and the solver-kind fixture below already evaluates it at import time.
+"""
+
+_MOSEK_SKIP_REASON = (
+    "mosek is not installed" if not requires("mosek") else "MOSEK cannot acquire a license"
+)
+
+licensed_mosek = pytest.mark.skipif(not _LICENSED_MOSEK, reason=_MOSEK_SKIP_REASON)
+"""Skip mark for tests that need a licensed MOSEK, not just the package."""
+
+
 def _usable_solver_kinds() -> list[SolverKind]:
     """The solver kinds usable in this environment, in detection order.
 
@@ -45,7 +60,7 @@ def _usable_solver_kinds() -> list[SolverKind]:
     least one backend.
     """
     kinds = list(available())
-    if SolverKind.MOSEK in kinds and not _licensed_mosek():
+    if SolverKind.MOSEK in kinds and not _LICENSED_MOSEK:
         kinds.remove(SolverKind.MOSEK)
     return kinds
 
